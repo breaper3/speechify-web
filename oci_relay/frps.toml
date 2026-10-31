@@ -1,0 +1,13 @@
+# Fast Reverse Proxy Server (frps) Configuration for Oracle Cloud
+# Run on your Oracle Cloud Ubuntu/Linux VPS:
+# ./frps -c frps.toml
+
+bindPort = 7000
+vhostHttpPort = 8080
+auth.token = "CHANGE_ME_TO_A_SECURE_TOKEN_12345"
+
+# Optional web dashboard for tunnel monitoring
+webServer.addr = "0.0.0.0"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "speechify_admin"

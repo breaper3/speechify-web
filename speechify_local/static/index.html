@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Speechify Local - Neural Reader & Visual PDF</title>
+  <link rel="icon" type="image/x-icon" href="/static/speechify.ico">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="/static/style.css?v=20261017_mobile3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="theme-dark view-pdf">
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">Speechify <span class="badge-local">LOCAL</span></span>
+      </div>
+      <div class="hardware-pill desktop-only" id="hardwareBadge">
+        <span class="dot-online"></span>
+        <span id="hardwareText">Kokoro-82M</span>
+      </div>
+    </div>
+
+    <!-- Center: View Mode Toggle & Document Title -->
+    <div class="header-center">
+      <div class="view-mode-toggle hidden desktop-only" id="viewModeToggle">
+        <button class="toggle-btn active" id="btnViewPdf" title="Display original PDF layout with visual highlights">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span>PDF View</span>
+        </button>
+        <button class="toggle-btn" id="btnViewText" title="Clean distraction-free reader text view">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="15" y1="12" x2="3" y2="12"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+          <span>Text View</span>
+        </button>
+      </div>
+      <div class="doc-meta-title" id="docHeaderTitle">Welcome to Speechify Local</div>
+      <div class="doc-meta-stats" id="docHeaderStats">0 words · 0 min</div>
+    </div>
+
+    <div class="header-right">
+      <div class="sample-dropdown desktop-only">
+        <button class="btn btn-secondary btn-sm" id="btnSamplePdf" title="Load formatted Sample PDF">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          <span>Sample PDF</span>
+        </button>
+      </div>
+      <button class="btn btn-primary btn-sm desktop-only" id="btnOpenImport">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        <span>Import</span>
+      </button>
+      <button class="icon-btn" id="btnOpenSearch" title="Search document (Ctrl+F)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      </button>
+      <!-- Quick mobile view switch icon button -->
+      <button class="icon-btn mobile-only-btn" id="btnMobileViewToggle" title="Toggle PDF / Text Mode">
+        <svg class="icon-mobile-pdf" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        <svg class="icon-mobile-text hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="15" y1="12" x2="3" y2="12"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+      </button>
+      <button class="icon-btn desktop-only" id="btnFullscreen" title="Toggle Fullscreen (F)">
+        <svg class="icon-fs-enter" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+        <svg class="icon-fs-exit hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>
+      </button>
+      <button class="icon-btn desktop-only" id="btnThemeToggle" title="Toggle Dark/Light Mode">
+        <span id="themeIcon">🌙</span>
+      </button>
+      <!-- Mobile Options / Menu Drawer Button -->
+      <button class="icon-btn mobile-only-btn" id="btnMobileMenu" title="Menu & Options">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Floating Search Toolbar (Ctrl+F) -->
+  <div class="search-bar-floating hidden" id="searchBar">
+    <div class="search-input-wrapper">
+      <svg class="search-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" id="searchInput" placeholder="Search document... (Enter to find next)" autocomplete="off">
+    </div>
+    <div class="search-actions">
+      <span class="search-count" id="searchCount">0 / 0</span>
+      <div class="search-nav-btns">
+        <button class="search-btn" id="btnSearchPrev" title="Previous match (Shift+Enter)">▲</button>
+        <button class="search-btn" id="btnSearchNext" title="Next match (Enter)">▼</button>
+      </div>
+      <button class="btn btn-primary btn-sm btn-search-play" id="btnSearchPlay" title="Start reading from this result">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+        <span>Read</span>
+      </button>
+      <button class="search-btn close-btn" id="btnCloseSearch" title="Close search (Esc)">✕</button>
+    </div>
+  </div>
+
+  <!-- Main Canvas Container -->
+  <main class="reader-container">
+    
+    <!-- 1. Visual PDF Mode (Displays actual PDF pages with overlays) -->
+    <div class="pdf-viewer" id="pdfViewer">
+      <!-- Injected PDF page sheets will render here -->
+    </div>
+
+    <!-- 2. Typography Reader View (Distraction-free text mode) -->
+    <div class="reader-content font-serif hidden" id="readerContent">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📖</div>
+        <h2>Ready to Read</h2>
+        <p>Import any PDF document, paste text, or load a sample document.</p>
+        <div class="empty-actions">
+          <button class="btn btn-primary" id="btnEmptyPdf">Load Sample PDF</button>
+          <button class="btn btn-secondary" id="btnEmptyImport">Upload File / Paste</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Speechify Floating Control Dock -->
+  <div class="player-dock" id="playerDock">
+    <div class="dock-inner">
+      
+      <!-- Progress Bar (Subtle top track) -->
+      <div class="dock-progress-track" id="dockProgressTrack">
+        <div class="dock-progress-bar" id="dockProgressBar" style="width: 0%;"></div>
+      </div>
+
+      <!-- Desktop Dock Content -->
+      <div class="dock-content desktop-only-flex">
+        <!-- Left: Sentence position & time remaining -->
+        <div class="dock-meta">
+          <div class="dock-counter" id="sentenceCounter">Sentence 0 / 0</div>
+          <div class="dock-time" id="remainingTime">0m left</div>
+        </div>
+
+        <!-- Center: Playback Transport Controls -->
+        <div class="dock-controls">
+          <button class="control-btn" id="btnPrev" title="Previous Sentence (Left Arrow)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"></path></svg>
+          </button>
+          
+          <button class="play-btn" id="btnPlayPause" title="Play / Pause (Spacebar)">
+            <svg class="play-icon" id="playIcon" width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+            <svg class="pause-icon hidden" id="pauseIcon" width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+          </button>
+
+          <button class="control-btn" id="btnNext" title="Next Sentence (Right Arrow)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"></path></svg>
+          </button>
+        </div>
+
+        <!-- Right: Settings (Voice, Speed, Font Size) -->
+        <div class="dock-settings">
+          <!-- Voice Selector -->
+          <div class="setting-item">
+            <span class="setting-icon">🗣️</span>
+            <select class="dock-select" id="voiceSelect" title="Select Voice">
+              <option value="af_heart">Heart (Warm American)</option>
+            </select>
+          </div>
+
+          <!-- Speed Gauge Control (Speechify Style) -->
+          <div class="speed-gauge-wrap" id="speedGaugeWrap">
+            <button class="speed-nudge-btn" id="btnSpeedDown" title="Decrease speed (−0.1x)">−</button>
+            
+            <div class="speed-track-container" id="speedTrackContainer" title="Drag to adjust playback speed">
+              <!-- Floating Rate Tooltip Directly Above the Slider Thumb -->
+              <div class="speed-thumb-tooltip" id="speedThumbTooltip">1.00x</div>
+
+              <!-- Milestone Snap Tick Marks -->
+              <div class="speed-gauge-ticks">
+                <span class="speed-tick major" style="left: 16.66%;" title="1.0x"></span>
+                <span class="speed-tick" style="left: 20.0%;" title="1.1x"></span>
+                <span class="speed-tick" style="left: 23.33%;" title="1.2x"></span>
+                <span class="speed-tick major" style="left: 25.0%;" title="1.25x"></span>
+                <span class="speed-tick" style="left: 26.66%;" title="1.3x"></span>
+                <span class="speed-tick" style="left: 30.0%;" title="1.4x"></span>
+                <span class="speed-tick major" style="left: 33.33%;" title="1.5x"></span>
+                <span class="speed-tick" style="left: 41.66%;" title="1.75x"></span>
+                <span class="speed-tick major" style="left: 50.0%;" title="2.0x"></span>
+                <span class="speed-tick" style="left: 58.33%;" title="2.25x"></span>
+                <span class="speed-tick major" style="left: 66.66%;" title="2.5x"></span>
+                <span class="speed-tick major" style="left: 83.33%;" title="3.0x"></span>
+              </div>
+
+              <div class="speed-gauge-track-fill" id="speedGaugeFill" style="width: 16.66%;"></div>
+              <input type="range" class="speed-gauge-slider" id="speedGaugeSlider" min="0.5" max="3.5" step="0.02" value="1.0">
+            </div>
+
+            <button class="speed-nudge-btn" id="btnSpeedUp" title="Increase speed (+0.02x)">+</button>
+
+            <button class="speed-gauge-pill" id="btnSpeedGaugePill" title="Click to open Speed Gauge & Presets">
+              <span class="speed-gauge-icon">⚡</span>
+              <span class="speed-gauge-val" id="speedGaugeVal">1.00x</span>
+            </button>
+
+            <!-- Floating Speechify Speed Gauge Popover -->
+            <div class="speed-popover hidden" id="speedPopover">
+              <div class="speed-popover-header">
+                <span class="speed-popover-title">Reading Speed</span>
+                <button class="speed-popover-close" id="btnCloseSpeedPopover">✕</button>
+              </div>
+
+              <div class="speed-popover-dial">
+                <div class="speed-popover-large" id="popoverLargeVal">1.00x</div>
+                <div class="speed-popover-wpm" id="popoverWpmVal">~150 words per minute</div>
+              </div>
+
+              <div class="speed-popover-slider-wrap">
+                <input type="range" class="speed-popover-slider" id="popoverSpeedSlider" min="0.5" max="3.5" step="0.02" value="1.0">
+                <div class="speed-popover-ticks">
+                  <span>0.5x</span>
+                  <span>1.0x</span>
+                  <span>1.5x</span>
+                  <span>2.0x</span>
+                  <span>2.5x</span>
+                  <span>3.0x</span>
+                  <span>3.5x</span>
+                </div>
+              </div>
+
+              <div class="speed-presets-grid">
+                <button class="speed-preset-chip" data-speed="0.8">0.8x</button>
+                <button class="speed-preset-chip active" data-speed="1.0">1.0x</button>
+                <button class="speed-preset-chip" data-speed="1.2">1.2x</button>
+                <button class="speed-preset-chip" data-speed="1.5">1.5x</button>
+                <button class="speed-preset-chip" data-speed="1.8">1.8x</button>
+                <button class="speed-preset-chip" data-speed="2.0">2.0x</button>
+                <button class="speed-preset-chip" data-speed="2.5">2.5x</button>
+                <button class="speed-preset-chip" data-speed="3.0">3.0x</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Page Zoom / Font Controls -->
+          <div class="font-controls" id="readerFontControls">
+            <button class="font-btn" id="btnZoomOut" title="Zoom Out / Smaller Font">-</button>
+            <button class="font-btn" id="btnZoomIn" title="Zoom In / Larger Font">+</button>
+          </div>
+
+          <!-- Minimize Player Bar Button -->
+          <button class="dock-btn-icon" id="btnMinimizeDock" title="Minimize player bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile Mini-Player Bar (Speechify / Apple Books Mobile Style) -->
+      <div class="dock-mobile-bar mobile-only-flex" id="dockMobileBar">
+        <button class="mobile-mini-play-btn" id="btnMobileMiniPlay" title="Play / Pause">
+          <svg class="mobile-mini-play-icon" id="miniMobilePlayIcon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+          <svg class="mobile-mini-pause-icon hidden" id="miniMobilePauseIcon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+        </button>
+        
+        <div class="mobile-mini-info" id="mobileMiniInfo" title="Tap to expand full player">
+          <div class="mobile-mini-title" id="mobileMiniDocTitle">Welcome to Speechify Local</div>
+          <div class="mobile-mini-snippet" id="mobileMiniSnippet">Sentence 0 / 0 · 0m left</div>
+        </div>
+
+        <div class="mobile-mini-actions">
+          <button class="mobile-mini-speed-pill" id="mobileMiniSpeedPill" title="Change speed">1.00x</button>
+          <button class="mobile-mini-expand-btn" id="btnMobileMiniExpand" title="Expand Player">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Minimized Compact Pill View (Desktop) -->
+      <div class="dock-minimized-bar hidden" id="dockMinimizedBar">
+        <button class="dock-mini-play" id="btnMiniPlayPause" title="Play / Pause (Spacebar)">
+          <svg class="mini-play-icon" id="miniPlayIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+          <svg class="mini-pause-icon hidden" id="miniPauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+        </button>
+        <span class="dock-mini-meta" id="miniSentenceCounter">Sentence 0 / 0</span>
+        <button class="dock-mini-expand" id="btnExpandDock" title="Expand player bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          <span>Expand</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Mobile Actions Drawer Sheet -->
+  <div class="mobile-drawer-overlay hidden" id="mobileDrawerOverlay">
+    <div class="mobile-drawer-sheet" id="mobileDrawerSheet">
+      <div class="drawer-drag-handle-wrap">
+        <div class="drawer-drag-handle"></div>
+      </div>
+      <div class="drawer-header">
+        <h4>Document & Settings</h4>
+        <button class="drawer-close" id="btnCloseMobileDrawer">✕</button>
+      </div>
+      <div class="drawer-hardware-card">
+        <span class="dot-online"></span>
+        <span id="mobileDrawerHardware">Kokoro-82M · CUDA GPU</span>
+      </div>
+      <div class="drawer-actions-grid">
+        <button class="drawer-action-btn" id="btnDrawerSamplePdf">
+          <span class="drawer-btn-icon">📄</span>
+          <span class="drawer-btn-title">Sample Research PDF</span>
+          <span class="drawer-btn-desc">Formatted multi-column paper</span>
+        </button>
+        <button class="drawer-action-btn" id="btnDrawerImport">
+          <span class="drawer-btn-icon">📥</span>
+          <span class="drawer-btn-title">Import Document</span>
+          <span class="drawer-btn-desc">Upload PDF / TXT or paste</span>
+        </button>
+        <button class="drawer-action-btn" id="btnDrawerSearch">
+          <span class="drawer-btn-icon">🔍</span>
+          <span class="drawer-btn-title">Search in Document</span>
+          <span class="drawer-btn-desc">Find text & phrases</span>
+        </button>
+        <button class="drawer-action-btn" id="btnDrawerTheme">
+          <span class="drawer-btn-icon" id="drawerThemeIcon">🌓</span>
+          <span class="drawer-btn-title">Dark / Light Mode</span>
+          <span class="drawer-btn-desc">Toggle color scheme</span>
+        </button>
+        <button class="drawer-action-btn" id="btnDrawerViewToggle">
+          <span class="drawer-btn-icon">📑</span>
+          <span class="drawer-btn-title">View Mode</span>
+          <span class="drawer-btn-desc" id="drawerViewModeDesc">Currently: PDF View</span>
+        </button>
+        <button class="drawer-action-btn" id="btnDrawerFullscreen">
+          <span class="drawer-btn-icon">🖥️</span>
+          <span class="drawer-btn-title">Fullscreen</span>
+          <span class="drawer-btn-desc">Distraction-free reading</span>
+        </button>
+      </div>
+      <div class="drawer-font-row">
+        <span>Display Scale / Font Size:</span>
+        <div class="drawer-zoom-btns">
+          <button class="drawer-zoom-btn" id="btnDrawerZoomOut">A−</button>
+          <button class="drawer-zoom-btn" id="btnDrawerZoomIn">A+</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Expanded Player Bottom Sheet -->
+  <div class="mobile-sheet-overlay hidden" id="mobileSheetOverlay"></div>
+  <div class="mobile-player-sheet" id="mobilePlayerSheet">
+    <div class="sheet-drag-handle-wrap" id="sheetDragHandle">
+      <div class="sheet-drag-handle"></div>
+    </div>
+    
+    <div class="sheet-header">
+      <button class="sheet-collapse-btn" id="btnCollapseMobileSheet" title="Minimize player">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <div class="sheet-title-meta">
+        <div class="sheet-title" id="mobileSheetDocTitle">Welcome to Speechify Local</div>
+        <div class="sheet-subtitle" id="mobileSheetDocStats">Sentence 0 / 0 · 0m left</div>
+      </div>
+      <div class="sheet-header-spacer"></div>
+    </div>
+
+    <!-- Active Live Sentence Karaoke Card -->
+    <div class="mobile-sentence-card" id="mobileSentenceCard">
+      <div class="sentence-card-badge">NOW READING</div>
+      <div class="sentence-card-text" id="mobileCurrentSentenceText">Select or play any sentence to start listening...</div>
+    </div>
+
+    <!-- Scrubber Progress Bar -->
+    <div class="mobile-scrubber-wrap">
+      <div class="mobile-scrubber-track" id="mobileScrubberTrack">
+        <div class="mobile-scrubber-fill" id="mobileScrubberFill" style="width: 0%;"></div>
+      </div>
+      <div class="mobile-scrubber-times">
+        <span id="mobileScrubberSentence">Sentence 0 / 0</span>
+        <span id="mobileScrubberTime">0m left</span>
+      </div>
+    </div>
+
+    <!-- Main Transport Buttons -->
+    <div class="mobile-transport-row">
+      <button class="mobile-nav-btn" id="btnMobilePrev" title="Previous Sentence">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"></path></svg>
+      </button>
+      <button class="mobile-play-main" id="btnMobilePlayPause" title="Play / Pause">
+        <svg class="mobile-play-icon" id="mobileSheetPlayIcon" width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+        <svg class="mobile-pause-icon hidden" id="mobileSheetPauseIcon" width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+      </button>
+      <button class="mobile-nav-btn" id="btnMobileNext" title="Next Sentence">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"></path></svg>
+      </button>
+    </div>
+
+    <!-- Speed Gauge & Presets -->
+    <div class="mobile-speed-section">
+      <div class="mobile-speed-header">
+        <span class="mobile-speed-label">READING SPEED</span>
+        <span class="mobile-speed-badge" id="mobileSheetSpeedBadge">1.00x (~150 WPM)</span>
+      </div>
+      <div class="mobile-speed-slider-wrap">
+        <input type="range" class="mobile-speed-slider" id="mobileSheetSpeedSlider" min="0.5" max="3.5" step="0.02" value="1.0">
+      </div>
+      <div class="mobile-speed-chips">
+        <button class="speed-chip-m" data-speed="0.8">0.8x</button>
+        <button class="speed-chip-m active" data-speed="1.0">1.0x</button>
+        <button class="speed-chip-m" data-speed="1.2">1.2x</button>
+        <button class="speed-chip-m" data-speed="1.5">1.5x</button>
+        <button class="speed-chip-m" data-speed="2.0">2.0x</button>
+      </div>
+    </div>
+
+    <!-- Voice Selection -->
+    <div class="mobile-voice-section">
+      <label class="mobile-voice-label" for="mobileSheetVoiceSelect">Narrator Voice</label>
+      <select class="mobile-voice-select" id="mobileSheetVoiceSelect">
+        <!-- Injected dynamically -->
+      </select>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div class="modal-overlay hidden" id="importModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Import Document</h3>
+        <button class="modal-close" id="btnCloseModal">✕</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="tab-btn active" data-tab="tabFile">Upload File (PDF / TXT)</button>
+        <button class="tab-btn" data-tab="tabPaste">Paste Text</button>
+      </div>
+
+      <!-- Tab: File Upload -->
+      <div class="tab-panel active" id="tabFile">
+        <div class="dropzone" id="dropzone">
+          <div class="drop-icon">📄</div>
+          <p class="drop-primary">Drag & drop your PDF or TXT file here</p>
+          <p class="drop-secondary">Preserves original PDF layouts, columns, and figures</p>
+          <input type="file" id="fileInput" accept=".pdf,.txt" style="display: none;">
+        </div>
+        <div class="file-status hidden" id="fileStatus">
+          <span class="file-name" id="fileName">document.pdf</span>
+          <span class="file-spinner" id="fileSpinner">Analyzing geometry & parsing...</span>
+        </div>
+        <div style="margin-top: 14px; text-align: center;">
+          <button class="btn btn-secondary btn-sm" id="btnSamplePdfInModal">Or load sample research paper (PDF)</button>
+        </div>
+      </div>
+
+      <!-- Tab: Paste Text -->
+      <div class="tab-panel" id="tabPaste">
+        <input type="text" class="input-text" id="pasteTitle" placeholder="Document Title (optional)">
+        <textarea class="textarea-paste" id="pasteContent" placeholder="Paste your article, report, book excerpt, or notes here..."></textarea>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="btnSubmitPaste">Start Reading</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Element -->
+  <audio id="audioPlayer" preload="auto"></audio>
+
+  <script src="/static/app.js?v=20261017_mobile3"></script>
+</body>
+</html>

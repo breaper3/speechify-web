@@ -1,0 +1,30 @@
+# Ignore all unrelated playground files by default
+/*
+
+# Whitelist Speechify source and config files
+!speechify_local/
+!speechify_local/**
+!oci_relay/
+!oci_relay/**
+!requirements.txt
+!render.yaml
+!run_speechify.py
+!start_gpu_worker.bat
+!create_shortcut.py
+!launch_speechify.bat
+!launch_app.py
+!.gitignore
+!README.md
+
+# Exclude heavy neural models and local weights from GitHub
+speechify_local/rvc_models/**
+speechify_local/rvc/hubert_base/**
+speechify_local/**/__pycache__/**
+*.pth
+*.index
+*.bin
+*.pt
+*.log
+*.wav
+*.mp3
+*.exe

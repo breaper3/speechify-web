@@ -1,0 +1,14 @@
+# Fast Reverse Proxy Client (frpc) Configuration for Home PC
+# Run on your Windows workstation:
+# frpc.exe -c frpc.toml
+
+serverAddr = "YOUR_ORACLE_CLOUD_PUBLIC_IP"
+serverPort = 7000
+auth.token = "CHANGE_ME_TO_A_SECURE_TOKEN_12345"
+
+[[proxies]]
+name = "speechify_gpu_worker"
+type = "http"
+localIP = "127.0.0.1"
+localPort = 8000
+customDomains = ["YOUR_ORACLE_CLOUD_PUBLIC_IP"]
