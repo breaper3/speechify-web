@@ -9,6 +9,7 @@
 !requirements.txt
 !render.yaml
 !run_speechify.py
+!run_tunnel.py
 !start_gpu_worker.bat
 !create_shortcut.py
 !launch_speechify.bat

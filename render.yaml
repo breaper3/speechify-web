@@ -10,6 +10,4 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.8
       - key: LOCAL_WORKER_URL
-        sync: false
-      - key: WORKER_SECRET_KEY
-        generateValue: true
+        value: https://hist-recorder-rebecca-titten.trycloudflare.com
