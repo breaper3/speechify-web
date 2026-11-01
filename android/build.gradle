@@ -1,0 +1,5 @@
+// Speechify for Android: Trusted Web Activity (TWA)
+// Opens https://speechify-web.onrender.com/ in full-screen Chrome engine with background audio support.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

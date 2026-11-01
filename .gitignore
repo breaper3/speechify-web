@@ -18,6 +18,10 @@
 !launch_app.py
 !.gitignore
 !README.md
+!android/
+!android/**
+!.github/
+!.github/**
 
 # Exclude heavy neural models and local weights from GitHub
 speechify_local/rvc_models/**

@@ -1,0 +1,52 @@
+plugins {
+    id 'com.android.application'
+}
+
+def host = (project.findProperty('host') ?: 'speechify-web.onrender.com').toString()
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int
+def assetStatements = '[{\\"relation\\": [\\"delegate_permission/common.handle_all_urls\\"], \\"target\\": {\\"namespace\\": \\"web\\", \\"site\\": \\"https://' + host + '\\"}}]'
+def keystore = System.getenv('KEYSTORE_FILE')
+
+android {
+    namespace 'app.speechify.mobile'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.speechify.mobile'
+        minSdk 21
+        targetSdk 34
+        versionCode runNumber
+        versionName "1.0.${runNumber}"
+        resValue 'string', 'app_name', 'Speechify'
+        resValue 'string', 'launch_url', "https://${host}/"
+        resValue 'string', 'asset_statements', assetStatements
+        manifestPlaceholders = [hostName: host]
+    }
+
+    signingConfigs {
+        release {
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS') ?: 'speechify'
+                keyPassword System.getenv('KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystore) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
