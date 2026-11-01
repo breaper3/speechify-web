@@ -113,7 +113,7 @@ def parse_plain_text(raw_text: str, title: str = "Document") -> Dict[str, Any]:
     }
 
 def get_pdf_bytes(doc_id: str) -> bytes:
-    """Retrieve PDF bytes from memory or disk cache."""
+    """Retrieve PDF bytes from memory, disk cache, or SQLite database."""
     if doc_id in PDF_STORE:
         return PDF_STORE[doc_id]
         
@@ -124,7 +124,22 @@ def get_pdf_bytes(doc_id: str) -> bytes:
             PDF_STORE[doc_id] = data
             return data
             
-    raise ValueError(f"Document {doc_id} not found in memory or disk cache.")
+    # Fallback to persistent database
+    try:
+        from .database import get_pdf_bytes_from_db
+        db_bytes = get_pdf_bytes_from_db(doc_id)
+        if db_bytes:
+            PDF_STORE[doc_id] = db_bytes
+            try:
+                with open(disk_path, "wb") as f:
+                    f.write(db_bytes)
+            except Exception:
+                pass
+            return db_bytes
+    except Exception as e:
+        print(f"[DB PDF Restore Warning] {e}")
+
+    raise ValueError(f"Document {doc_id} not found in memory, disk cache, or database.")
 
 def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, Any]:
     """

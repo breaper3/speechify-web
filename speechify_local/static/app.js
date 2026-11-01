@@ -158,6 +158,591 @@ const fileInput = document.getElementById('fileInput');
 const fileStatus = document.getElementById('fileStatus');
 const fileName = document.getElementById('fileName');
 
+// Library & Sharing DOM Elements
+const btnLibrary = document.getElementById('btnLibrary');
+const libraryBadgeCount = document.getElementById('libraryBadgeCount');
+const btnShareDoc = document.getElementById('btnShareDoc');
+const libraryModal = document.getElementById('libraryModal');
+const btnCloseLibraryModal = document.getElementById('btnCloseLibraryModal');
+const librarySearchInput = document.getElementById('librarySearchInput');
+const btnLibraryNewUpload = document.getElementById('btnLibraryNewUpload');
+const libraryListContainer = document.getElementById('libraryListContainer');
+const shareModal = document.getElementById('shareModal');
+const btnCloseShareModal = document.getElementById('btnCloseShareModal');
+const shareLinkInput = document.getElementById('shareLinkInput');
+const btnCopyShareLink = document.getElementById('btnCopyShareLink');
+const shareToast = document.getElementById('shareToast');
+
+// Auth DOM Elements
+const btnTriggerGoogleSignIn = document.getElementById('btnTriggerGoogleSignIn');
+const userPill = document.getElementById('userPill');
+const userAvatar = document.getElementById('userAvatar');
+const userName = document.getElementById('userName');
+const btnSignOut = document.getElementById('btnSignOut');
+const gSignInContainer = document.getElementById('gSignInContainer');
+const libraryAccountStatus = document.getElementById('libraryAccountStatus');
+
+// Progress sync timer
+let progressSyncTimer = null;
+
+// ==================== IndexedDB Local-First Persistence ====================
+const DB_NAME = 'speechify_local_db';
+const DB_VERSION = 1;
+let idb = null;
+
+function initIndexedDB() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('documents')) {
+          const store = db.createObjectStore('documents', { keyPath: 'doc_id' });
+          store.createIndex('last_read_at', 'last_read_at', { unique: false });
+        }
+      };
+      req.onsuccess = (e) => {
+        idb = e.target.result;
+        resolve(idb);
+      };
+      req.onerror = () => {
+        console.warn('[IndexedDB] Database open error, using localStorage fallback');
+        resolve(null);
+      };
+    } catch (err) {
+      console.warn('[IndexedDB] Initialization error:', err);
+      resolve(null);
+    }
+  });
+}
+
+function idbSaveDocument(doc) {
+  if (!doc || !doc.doc_id) return Promise.resolve();
+  const record = {
+    doc_id: doc.doc_id,
+    title: doc.title || 'Untitled Document',
+    filename: doc.filename || (doc.title + (doc.is_pdf ? '.pdf' : '.txt')),
+    is_pdf: !!doc.is_pdf,
+    total_sentences: doc.total_sentences || (doc.sentences ? doc.sentences.length : 0),
+    total_words: doc.total_words || 0,
+    est_minutes: doc.est_minutes || 0,
+    current_sentence_index: doc.current_sentence_index || 0,
+    current_page: doc.current_page || 0,
+    speed: doc.speed || state.speed || 1.0,
+    voice: doc.voice || state.voice || 'af_heart',
+    last_read_at: Date.now(),
+    doc_data: doc
+  };
+
+  try {
+    localStorage.setItem('speechify_last_active_doc_id', doc.doc_id);
+  } catch (e) {}
+
+  if (!idb) return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const tx = idb.transaction(['documents'], 'readwrite');
+      tx.objectStore('documents').put(record);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+function idbGetDocument(docId) {
+  if (!idb || !docId) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const tx = idb.transaction(['documents'], 'readonly');
+      const req = tx.objectStore('documents').get(docId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+function idbListDocuments() {
+  if (!idb) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    try {
+      const tx = idb.transaction(['documents'], 'readonly');
+      const req = tx.objectStore('documents').getAll();
+      req.onsuccess = () => {
+        const list = req.result || [];
+        list.sort((a, b) => (b.last_read_at || 0) - (a.last_read_at || 0));
+        resolve(list);
+      };
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+
+function idbUpdateProgress(docId, sentenceIndex, pageNum, speed, voice) {
+  if (!docId) return;
+  idbGetDocument(docId).then((rec) => {
+    if (rec) {
+      rec.current_sentence_index = sentenceIndex;
+      rec.current_page = pageNum;
+      rec.last_read_at = Date.now();
+      if (speed) rec.speed = speed;
+      if (voice) rec.voice = voice;
+      if (rec.doc_data) {
+        rec.doc_data.current_sentence_index = sentenceIndex;
+        rec.doc_data.current_page = pageNum;
+      }
+      idbSaveDocument(rec.doc_data);
+    }
+  });
+}
+
+function idbDeleteDocument(docId) {
+  if (!idb || !docId) return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const tx = idb.transaction(['documents'], 'readwrite');
+      tx.objectStore('documents').delete(docId);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+// ==================== User & Google Authentication ====================
+let currentUser = null;
+let googleClientId = '';
+
+async function checkAuthSession() {
+  try {
+    const res = await fetch('/api/auth/me');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.authenticated && data.user) {
+        setLoggedInUser(data.user);
+        return;
+      }
+    }
+  } catch (e) {}
+  setLoggedOutUser();
+}
+
+function setLoggedInUser(user) {
+  currentUser = user;
+  if (gSignInContainer) gSignInContainer.classList.add('hidden');
+  if (userPill) userPill.classList.remove('hidden');
+  if (userAvatar) userAvatar.src = user.picture || 'https://www.gstatic.com/images/branding/product/1x/avatar_square_grey_512dp.png';
+  if (userName) userName.textContent = user.name || user.email.split('@')[0];
+  if (libraryAccountStatus) libraryAccountStatus.textContent = `Signed in as ${user.email} (Cloud Sync Active)`;
+
+  refreshLibraryBadge();
+}
+
+function setLoggedOutUser() {
+  currentUser = null;
+  if (gSignInContainer) gSignInContainer.classList.remove('hidden');
+  if (userPill) userPill.classList.add('hidden');
+  if (libraryAccountStatus) libraryAccountStatus.textContent = 'Local Guest Library (Sign in to sync across devices)';
+
+  refreshLibraryBadge();
+}
+
+async function initGoogleSignIn() {
+  try {
+    const cfgRes = await fetch('/api/auth/config');
+    if (cfgRes.ok) {
+      const cfg = await cfgRes.json();
+      googleClientId = cfg.client_id;
+    }
+  } catch (e) {}
+
+  let attempts = 0;
+  const checkGsi = setInterval(() => {
+    attempts++;
+    if (window.google && google.accounts && google.accounts.id) {
+      clearInterval(checkGsi);
+      setupGsi();
+    } else if (attempts > 30) {
+      clearInterval(checkGsi);
+    }
+  }, 250);
+}
+
+function setupGsi() {
+  if (!window.google || !google.accounts || !google.accounts.id) return;
+  const clientIdToUse = googleClientId || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+
+  google.accounts.id.initialize({
+    client_id: clientIdToUse,
+    callback: handleGoogleCredentialResponse,
+    ux_mode: 'popup',
+    auto_select: false,
+    itp_support: true,
+    use_fedcm_for_prompt: true,
+    use_fedcm_for_button: true,
+    context: 'signin'
+  });
+
+  const hiddenWrapper = document.getElementById('hiddenGsiWrapper');
+  if (hiddenWrapper) {
+    google.accounts.id.renderButton(hiddenWrapper, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'medium'
+    });
+  }
+}
+
+function triggerGoogleSignIn() {
+  if (!googleClientId) {
+    const entered = prompt(
+      "Sign in with Google requires a Google OAuth Client ID.\n\n" +
+      "If you have created a Client ID in Google Cloud Console, enter it here:\n" +
+      "(or set GOOGLE_CLIENT_ID on Render):"
+    );
+    if (entered && entered.trim()) {
+      googleClientId = entered.trim();
+      setupGsi();
+      setTimeout(() => {
+        if (window.google && google.accounts && google.accounts.id) {
+          google.accounts.id.prompt();
+        }
+      }, 300);
+    }
+    return;
+  }
+
+  if (window.google && google.accounts && google.accounts.id) {
+    google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        const hiddenWrapper = document.getElementById('hiddenGsiWrapper');
+        const renderedBtn = hiddenWrapper ? hiddenWrapper.querySelector('[role="button"]') : null;
+        if (renderedBtn) renderedBtn.click();
+      }
+    });
+  }
+}
+
+async function handleGoogleCredentialResponse(response) {
+  if (!response || !response.credential) return;
+  try {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setLoggedInUser(data.user);
+    } else {
+      const err = await res.json();
+      alert('Sign-in error: ' + (err.detail || 'Verification failed'));
+    }
+  } catch (err) {
+    alert('Could not complete Google Sign-in: ' + err.message);
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) {}
+  setLoggedOutUser();
+}
+
+// ==================== Document Library & Sharing ====================
+
+async function refreshLibraryBadge() {
+  const localDocs = await idbListDocuments();
+  let count = localDocs.length;
+  try {
+    const res = await fetch('/api/documents');
+    if (res.ok) {
+      const data = await res.json();
+      const serverDocs = data.documents || [];
+      const ids = new Set(localDocs.map(d => d.doc_id));
+      serverDocs.forEach(d => ids.add(d.doc_id));
+      count = ids.size;
+    }
+  } catch (e) {}
+
+  if (libraryBadgeCount) {
+    libraryBadgeCount.textContent = count;
+  }
+}
+
+function openLibrary() {
+  if (libraryModal) libraryModal.classList.remove('hidden');
+  renderLibraryList();
+}
+
+function closeLibrary() {
+  if (libraryModal) libraryModal.classList.add('hidden');
+}
+
+function formatTimeAgo(ms) {
+  if (!ms) return 'Recently';
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function renderLibraryList(query = '') {
+  if (!libraryListContainer) return;
+  libraryListContainer.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);">Loading library...</div>';
+
+  let serverDocs = [];
+  try {
+    const res = await fetch('/api/documents');
+    if (res.ok) {
+      const data = await res.json();
+      serverDocs = data.documents || [];
+    }
+  } catch (e) {}
+
+  const localDocs = await idbListDocuments();
+
+  const mergedMap = new Map();
+  serverDocs.forEach(d => mergedMap.set(d.doc_id, d));
+  localDocs.forEach(d => {
+    if (!mergedMap.has(d.doc_id)) {
+      mergedMap.set(d.doc_id, d);
+    } else {
+      const existing = mergedMap.get(d.doc_id);
+      if ((d.last_read_at || 0) > (existing.last_read_at || 0)) {
+        existing.current_sentence_index = d.current_sentence_index;
+        existing.current_page = d.current_page;
+        existing.last_read_at = d.last_read_at;
+      }
+    }
+  });
+
+  let allDocs = Array.from(mergedMap.values());
+  allDocs.sort((a, b) => (b.last_read_at || 0) - (a.last_read_at || 0));
+
+  if (query && query.trim()) {
+    const q = query.toLowerCase();
+    allDocs = allDocs.filter(d => (d.title || '').toLowerCase().includes(q) || (d.filename || '').toLowerCase().includes(q));
+  }
+
+  if (libraryBadgeCount) libraryBadgeCount.textContent = allDocs.length;
+
+  if (allDocs.length === 0) {
+    libraryListContainer.innerHTML = `
+      <div class="library-empty-state">
+        <div class="library-empty-icon">📚</div>
+        <h4>No Documents in Library</h4>
+        <p>Import a PDF or text file to start reading. Your progress is saved automatically.</p>
+      </div>
+    `;
+    return;
+  }
+
+  libraryListContainer.innerHTML = '';
+  allDocs.forEach(doc => {
+    const isPdf = !!doc.is_pdf;
+    const isActive = state.document && state.document.doc_id === doc.doc_id;
+    const curIdx = doc.current_sentence_index || 0;
+    const totalS = doc.total_sentences || 1;
+    const pct = Math.min(100, Math.round((curIdx / Math.max(1, totalS)) * 100));
+    const timeAgo = formatTimeAgo(doc.last_read_at);
+
+    const card = document.createElement('div');
+    card.className = `library-doc-card ${isActive ? 'active-doc' : ''}`;
+    card.innerHTML = `
+      <div class="library-card-icon ${isPdf ? 'pdf-icon' : ''}">
+        ${isPdf ? 'PDF' : 'TXT'}
+      </div>
+      <div class="library-card-body">
+        <div class="library-card-title-row">
+          <span class="library-card-title">${escapeHtml(doc.title)}</span>
+          ${isActive ? '<span class="library-active-badge">Reading</span>' : ''}
+        </div>
+        <div class="library-card-meta">
+          <span>${pct}% read · Sentence ${curIdx + 1}/${totalS}</span>
+          ${isPdf ? `<span>Page ${(doc.current_page || 0) + 1}</span>` : ''}
+          <span>${doc.total_words || 0} words</span>
+          <span>${timeAgo}</span>
+        </div>
+        <div class="library-progress-track">
+          <div class="library-progress-bar" style="width: ${pct}%"></div>
+        </div>
+      </div>
+      <div class="library-card-actions">
+        <button class="btn-library-action btn-action-resume" title="Resume reading">
+          ▶ Resume
+        </button>
+        <button class="btn-library-action btn-action-share" title="Share link">
+          🔗 Share
+        </button>
+        <button class="btn-library-action btn-action-delete" title="Delete from library">
+          🗑
+        </button>
+      </div>
+    `;
+
+    card.querySelector('.btn-action-resume').addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadSavedDocument(doc.doc_id);
+    });
+
+    card.addEventListener('click', () => {
+      loadSavedDocument(doc.doc_id);
+    });
+
+    card.querySelector('.btn-action-share').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openShareModal(doc.doc_id);
+    });
+
+    card.querySelector('.btn-action-delete').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (confirm(`Remove "${doc.title}" from your library?`)) {
+        await deleteSavedDocument(doc.doc_id);
+        renderLibraryList(librarySearchInput ? librarySearchInput.value : '');
+      }
+    });
+
+    libraryListContainer.appendChild(card);
+  });
+}
+
+async function loadSavedDocument(docId) {
+  closeLibrary();
+
+  // 1. Check local IndexedDB first for instant startup
+  const localRec = await idbGetDocument(docId);
+  if (localRec && localRec.doc_data) {
+    renderDocument(localRec.doc_data);
+    if (localRec.current_sentence_index > 0) {
+      setTimeout(() => jumpToSentence(localRec.current_sentence_index, false), 150);
+    }
+  }
+
+  // 2. Fetch from server to sync latest server progress
+  try {
+    const res = await fetch(`/api/documents/${docId}`);
+    if (res.ok) {
+      const serverDoc = await res.json();
+      renderDocument(serverDoc);
+      const resumeIndex = serverDoc.current_sentence_index || 0;
+      if (resumeIndex > 0) {
+        setTimeout(() => jumpToSentence(resumeIndex, false), 150);
+      }
+    }
+  } catch (err) {
+    console.warn('[Doc Load] Server fetch fallback:', err);
+  }
+}
+
+async function deleteSavedDocument(docId) {
+  await idbDeleteDocument(docId);
+  try {
+    await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
+  } catch (e) {}
+
+  if (state.document && state.document.doc_id === docId) {
+    localStorage.removeItem('speechify_last_active_doc_id');
+  }
+  refreshLibraryBadge();
+}
+
+async function openShareModal(docId) {
+  const targetId = docId || (state.document ? state.document.doc_id : null);
+  if (!targetId) return;
+
+  try {
+    const res = await fetch(`/api/documents/${targetId}/share`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (shareLinkInput) shareLinkInput.value = data.share_url;
+      if (shareToast) shareToast.classList.add('hidden');
+      if (shareModal) shareModal.classList.remove('hidden');
+    }
+  } catch (err) {
+    alert('Failed to generate share link: ' + err.message);
+  }
+}
+
+function closeShareModal() {
+  if (shareModal) shareModal.classList.add('hidden');
+}
+
+function copyShareLink() {
+  if (!shareLinkInput || !shareLinkInput.value) return;
+  navigator.clipboard.writeText(shareLinkInput.value).then(() => {
+    if (shareToast) {
+      shareToast.classList.remove('hidden');
+      setTimeout(() => shareToast.classList.add('hidden'), 3000);
+    }
+  }).catch(() => {
+    shareLinkInput.select();
+    document.execCommand('copy');
+  });
+}
+
+async function loadSharedDocument(shareId) {
+  try {
+    const res = await fetch(`/api/shared/${shareId}`);
+    if (!res.ok) throw new Error('Shared document not found');
+    const docData = await res.json();
+    renderDocument(docData);
+    if (docHeaderTitle) docHeaderTitle.textContent = `${docData.title} (Shared)`;
+  } catch (err) {
+    alert('Error loading shared document: ' + err.message);
+    loadSamplePdf();
+  }
+}
+
+function persistReadingProgress(index, pageNum) {
+  if (!state.document || !state.document.doc_id) return;
+  const docId = state.document.doc_id;
+  state.document.current_sentence_index = index;
+  state.document.current_page = pageNum;
+
+  // Instant local IndexedDB save
+  idbUpdateProgress(docId, index, pageNum, state.speed, state.voice);
+  try {
+    localStorage.setItem('speechify_last_active_doc_id', docId);
+  } catch (e) {}
+
+  // Debounced cloud sync
+  clearTimeout(progressSyncTimer);
+  progressSyncTimer = setTimeout(() => {
+    fetch(`/api/documents/${docId}/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sentence_index: index,
+        page_num: pageNum,
+        speed: state.speed,
+        voice: state.voice
+      })
+    }).catch(() => {});
+  }, 2000);
+}
+
 // Mobile WakeLock & Haptics Helpers
 let wakeLock = null;
 async function requestWakeLock() {
@@ -192,9 +777,48 @@ async function initApp() {
   setupMediaSession();
   setupMobileGestures();
   setPlaybackSpeed(1.0, true);
+
+  // Initialize Local Persistence & Google OAuth
+  await initIndexedDB();
+  await checkAuthSession();
+  initGoogleSignIn();
   await loadVoices();
-  
-  // Load Sample PDF by default to showcase visual layout reading
+
+  // Check URL query parameters (?share=... or ?doc=...)
+  const urlParams = new URLSearchParams(window.location.search);
+  const shareParam = urlParams.get('share');
+  const docParam = urlParams.get('doc');
+
+  if (shareParam) {
+    await loadSharedDocument(shareParam);
+    return;
+  }
+  if (docParam) {
+    await loadSavedDocument(docParam);
+    return;
+  }
+
+  // Restore last active document from IndexedDB or server
+  const lastDocId = localStorage.getItem('speechify_last_active_doc_id');
+  if (lastDocId) {
+    const rec = await idbGetDocument(lastDocId);
+    if (rec && rec.doc_data) {
+      renderDocument(rec.doc_data);
+      if (rec.current_sentence_index > 0) {
+        setTimeout(() => jumpToSentence(rec.current_sentence_index, false), 150);
+      }
+      return;
+    }
+  }
+
+  // If no last active, check if any saved documents exist in IndexedDB
+  const allDocs = await idbListDocuments();
+  if (allDocs && allDocs.length > 0) {
+    await loadSavedDocument(allDocs[0].doc_id);
+    return;
+  }
+
+  // Fresh user: load sample research paper
   await loadSamplePdf();
 }
 
@@ -301,11 +925,18 @@ async function loadDocumentFromText(title, rawText) {
 // ==========================================================================
 function renderDocument(docData) {
   state.document = docData;
-  state.currentIndex = 0;
+  const resumeIndex = (typeof docData.current_sentence_index === 'number' && docData.current_sentence_index < docData.total_sentences) ? docData.current_sentence_index : 0;
+  state.currentIndex = resumeIndex;
   state.audioBlobCache.clear();
   clearSearchHighlights();
   closeSearch();
   pauseAudio();
+
+  // Save to IndexedDB and update active state
+  idbSaveDocument(docData);
+  refreshLibraryBadge();
+
+  if (btnShareDoc) btnShareDoc.classList.remove('hidden');
 
   // Update Headers & Mobile Titles
   docHeaderTitle.textContent = docData.title;
@@ -331,7 +962,11 @@ function renderDocument(docData) {
   renderTextView(docData);
 
   updateProgressUI();
-  preloadNextSentence(0);
+  preloadNextSentence(resumeIndex);
+
+  if (resumeIndex > 0) {
+    setTimeout(() => jumpToSentence(resumeIndex, false), 150);
+  }
 }
 
 function renderPdfView(docData) {
@@ -506,6 +1141,8 @@ async function playSentence(index) {
   updateMediaSession(index);
 
   const sentenceObj = state.document.sentences[index];
+  const curPage = sentenceObj ? (sentenceObj.page_num || 0) : 0;
+  persistReadingProgress(index, curPage);
   
   try {
     let blobUrl = state.audioBlobCache.get(index);
@@ -570,6 +1207,10 @@ function jumpToSentence(index, autoPlay = true) {
   if (!state.document) return;
   const target = Math.max(0, Math.min(index, state.document.total_sentences - 1));
   state.currentIndex = target;
+  const sObj = state.document.sentences[target];
+  const curPage = sObj ? (sObj.page_num || 0) : 0;
+  persistReadingProgress(target, curPage);
+
   if (autoPlay) {
     playSentence(target);
   } else {
@@ -1447,6 +2088,46 @@ function setupEventListeners() {
       const targetIdx = Math.floor(ratio * state.document.total_sentences);
       jumpToSentence(targetIdx, true);
     });
+  }
+
+  // Library Listeners
+  if (btnLibrary) btnLibrary.addEventListener('click', openLibrary);
+  if (btnCloseLibraryModal) btnCloseLibraryModal.addEventListener('click', closeLibrary);
+  if (libraryModal) {
+    libraryModal.addEventListener('click', (e) => {
+      if (e.target === libraryModal) closeLibrary();
+    });
+  }
+  if (btnLibraryNewUpload) {
+    btnLibraryNewUpload.addEventListener('click', () => {
+      closeLibrary();
+      openModal();
+    });
+  }
+  if (librarySearchInput) {
+    librarySearchInput.addEventListener('input', (e) => {
+      renderLibraryList(e.target.value);
+    });
+  }
+
+  // Share Listeners
+  if (btnShareDoc) {
+    btnShareDoc.addEventListener('click', () => openShareModal());
+  }
+  if (btnCloseShareModal) btnCloseShareModal.addEventListener('click', closeShareModal);
+  if (shareModal) {
+    shareModal.addEventListener('click', (e) => {
+      if (e.target === shareModal) closeShareModal();
+    });
+  }
+  if (btnCopyShareLink) btnCopyShareLink.addEventListener('click', copyShareLink);
+
+  // Auth Listeners
+  if (btnTriggerGoogleSignIn) {
+    btnTriggerGoogleSignIn.addEventListener('click', triggerGoogleSignIn);
+  }
+  if (btnSignOut) {
+    btnSignOut.addEventListener('click', handleLogout);
   }
 }
 

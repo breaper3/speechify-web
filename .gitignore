@@ -35,3 +35,6 @@ speechify_local/**/__pycache__/**
 *.wav
 *.mp3
 *.exe
+*.db
+*.sqlite3
+data/**
