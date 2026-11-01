@@ -14,6 +14,13 @@ from .database import upsert_user, get_user_by_id
 
 # Environment Configuration
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+CLIENT_ID_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "google_client_id.txt")
+if not GOOGLE_CLIENT_ID and os.path.exists(CLIENT_ID_FILE):
+    try:
+        with open(CLIENT_ID_FILE, "r", encoding="utf-8") as f:
+            GOOGLE_CLIENT_ID = f.read().strip()
+    except Exception:
+        pass
 
 # Persistent Secret Key for Session Signing
 SECRET_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", ".session_secret")
