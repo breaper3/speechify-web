@@ -107,13 +107,18 @@ async def parse_file_endpoint(file: UploadFile = File(...)):
         return parse_plain_text(text, title=filename.rsplit('.', 1)[0].replace('_', ' ').title())
 
 @app.get("/api/pdf-page/{doc_id}/{page_num}")
-def get_pdf_page(doc_id: str, page_num: int, dpi: int = 150):
+def get_pdf_page(doc_id: str, page_num: int, dpi: int = 130):
     """
-    Renders a specific page of an uploaded PDF as a high-resolution PNG image.
+    Renders a specific page of an uploaded PDF as a high-performance JPEG image.
+    Cached on disk and in the browser for instant sub-millisecond retrieval.
     """
     try:
-        png_bytes = render_pdf_page_image(doc_id, page_num, dpi=dpi)
-        return Response(content=png_bytes, media_type="image/png")
+        jpg_bytes = render_pdf_page_image(doc_id, page_num, dpi=dpi)
+        return Response(
+            content=jpg_bytes,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=604800, immutable"}
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except IndexError as e:

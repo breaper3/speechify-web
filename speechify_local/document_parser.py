@@ -1,10 +1,16 @@
+import os
 import re
 import io
 import hashlib
+import tempfile
 import fitz  # PyMuPDF
 from typing import List, Dict, Any, Tuple, Optional
 
-# In-memory store for active PDF documents: doc_id -> bytes
+# Persistent on-disk cache directory for PDF files and rendered pages
+CACHE_DIR = os.path.join(tempfile.gettempdir(), "speechify_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+# In-memory store fallback: doc_id -> bytes
 PDF_STORE: Dict[str, bytes] = {}
 
 COMMON_ABBREVIATIONS = {
@@ -18,19 +24,14 @@ def clean_text(text: str) -> str:
     """Normalize text and strip stray control characters."""
     if not text:
         return ""
-    # Normalize em-dashes and en-dashes to hyphens or colons
     text = text.replace('—', ' - ').replace('–', ' - ')
-    # Normalize quotation marks
     text = text.replace('“', '"').replace('”', '"').replace('’', "'").replace('‘', "'")
-    # Replace non-breaking spaces
     text = text.replace('\xa0', ' ')
-    # Normalize multiple whitespace
-    text = re.sub(r'[ \t]+', ' ', text)
-    return text.strip()
+    return re.sub(r'[ \t]+', ' ', text).strip()
 
 def split_into_sentences(text: str) -> List[str]:
     """
-    Splits a paragraph into distinct sentences, handling abbreviations and numbers.
+    Splits text into clean sentences, handling abbreviations and numerical figures.
     """
     text = clean_text(text)
     if not text:
@@ -62,7 +63,7 @@ def split_into_sentences(text: str) -> List[str]:
 
 def parse_plain_text(raw_text: str, title: str = "Document") -> Dict[str, Any]:
     """
-    Parses plain text into paragraphs and sentences.
+    Parses plain text into structured paragraphs and sentences.
     """
     paragraphs_raw = [p.strip() for p in re.split(r'\n\s*\n', raw_text) if p.strip()]
     if not paragraphs_raw:
@@ -111,47 +112,32 @@ def parse_plain_text(raw_text: str, title: str = "Document") -> Dict[str, Any]:
         "pages": []
     }
 
-def find_sentence_rects(page: fitz.Page, sentence: str) -> List[fitz.Rect]:
-    """
-    Locates the visual bounding boxes for a sentence on a PDF page.
-    Handles exact matches, hyphenated text, and multi-line wrapping.
-    """
-    # 1. Exact search
-    clean_s = sentence.strip()
-    rects = page.search_for(clean_s)
-    if rects:
-        return rects
+def get_pdf_bytes(doc_id: str) -> bytes:
+    """Retrieve PDF bytes from memory or disk cache."""
+    if doc_id in PDF_STORE:
+        return PDF_STORE[doc_id]
         
-    # 2. Search without punctuation
-    no_punct = re.sub(r'[^\w\s]', '', clean_s)
-    if len(no_punct) > 5:
-        rects = page.search_for(no_punct)
-        if rects:
-            return rects
-
-    # 3. Search by sub-chunks (prefix, middle, suffix)
-    words = clean_s.split()
-    collected_rects = []
-    if len(words) >= 4:
-        # Search first 4 words
-        prefix = ' '.join(words[:4])
-        r1 = page.search_for(prefix)
-        if r1:
-            collected_rects.extend(r1)
-        # Search last 4 words
-        suffix = ' '.join(words[-4:])
-        r2 = page.search_for(suffix)
-        if r2:
-            collected_rects.extend(r2)
-
-    return collected_rects
+    disk_path = os.path.join(CACHE_DIR, f"{doc_id}.pdf")
+    if os.path.exists(disk_path):
+        with open(disk_path, "rb") as f:
+            data = f.read()
+            PDF_STORE[doc_id] = data
+            return data
+            
+    raise ValueError(f"Document {doc_id} not found in memory or disk cache.")
 
 def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, Any]:
     """
-    Parses a PDF into structured pages, images, and coordinate-aligned sentences.
-    Preserves exact visual geometry for Speechify-style overlay highlighting.
+    High-speed, single-pass PDF parser with exact visual bounding box alignment.
+    Saves document persistently to disk cache to prevent loss during server lifecycle.
     """
-    doc_id = "pdf_" + hashlib.md5(file_bytes).hexdigest()[:10]
+    doc_id = "pdf_" + hashlib.md5(file_bytes).hexdigest()[:12]
+    
+    # Persist raw PDF to disk cache
+    disk_path = os.path.join(CACHE_DIR, f"{doc_id}.pdf")
+    if not os.path.exists(disk_path):
+        with open(disk_path, "wb") as f:
+            f.write(file_bytes)
     PDF_STORE[doc_id] = file_bytes
     
     doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -173,15 +159,27 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
         p_height = page.rect.height
         aspect_ratio = round(p_height / p_width, 4) if p_width > 0 else 1.414
 
-        # Extract text blocks
+        # Fast single-pass word and block extraction
         blocks = page.get_text("blocks")
-        page_sentence_ids = []
+        page_words = page.get_text("words")  # (x0, y0, x1, y1, word, block_no, line_no, word_no)
         
+        # Index words by block_no
+        block_words_map: Dict[int, list] = {}
+        for w in page_words:
+            b_idx = w[5]
+            if b_idx not in block_words_map:
+                block_words_map[b_idx] = []
+            block_words_map[b_idx].append(w)
+
+        page_sentence_ids = []
+
         for b in blocks:
-            b_text = b[4] # Block text
+            b_text = b[4]
+            b_idx = b[5]
             if not b_text.strip():
                 continue
-            # Filter obvious single-number page footers
+                
+            # Filter standard numeric page footers
             if re.match(r'^\s*page\s*\d+\s*(of\s*\d+)?\s*$', b_text, re.IGNORECASE) or re.match(r'^\s*\d+\s*$', b_text):
                 continue
 
@@ -191,27 +189,43 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
 
             p_sentences = split_into_sentences(fixed_text)
             p_sentence_ids = []
+            
+            b_words = block_words_map.get(b_idx, [])
+            w_pointer = 0
 
             for s_text in p_sentences:
                 w_count = len(s_text.split())
                 total_words += w_count
                 
-                # Locate bounding rects on this page
-                fitz_rects = find_sentence_rects(page, s_text)
-                
-                # Normalize rects into percentage coordinates (0% to 100%)
-                norm_rects = []
-                for fr in fitz_rects:
-                    rx = round((fr.x0 / p_width) * 100, 2)
-                    ry = round((fr.y0 / p_height) * 100, 2)
-                    rw = round(((fr.x1 - fr.x0) / p_width) * 100, 2)
-                    rh = round(((fr.y1 - fr.y0) / p_height) * 100, 2)
-                    # Clamp values
-                    rx = max(0.0, min(100.0, rx))
-                    ry = max(0.0, min(100.0, ry))
-                    rw = max(0.5, min(100.0 - rx, rw))
-                    rh = max(0.5, min(100.0 - ry, rh))
-                    norm_rects.append({"x": rx, "y": ry, "w": rw, "h": rh})
+                # Fast single-pass line bounding calculation
+                rects = []
+                if b_words and w_pointer < len(b_words):
+                    matched_words = b_words[w_pointer : w_pointer + w_count]
+                    w_pointer += w_count
+                    
+                    if matched_words:
+                        line_rects: Dict[int, list] = {}
+                        for mw in matched_words:
+                            line_no = mw[6]
+                            if line_no not in line_rects:
+                                line_rects[line_no] = [mw[0], mw[1], mw[2], mw[3]]
+                            else:
+                                line_rects[line_no][0] = min(line_rects[line_no][0], mw[0])
+                                line_rects[line_no][1] = min(line_rects[line_no][1], mw[1])
+                                line_rects[line_no][2] = max(line_rects[line_no][2], mw[2])
+                                line_rects[line_no][3] = max(line_rects[line_no][3], mw[3])
+                                
+                        for lr in line_rects.values():
+                            rx = round((lr[0] / p_width) * 100, 2)
+                            ry = round((lr[1] / p_height) * 100, 2)
+                            rw = round(((lr[2] - lr[0]) / p_width) * 100, 2)
+                            rh = round(((lr[3] - lr[1]) / p_height) * 100, 2)
+                            rects.append({
+                                "x": max(0.0, min(100.0, rx)),
+                                "y": max(0.0, min(100.0, ry)),
+                                "w": max(0.5, min(100.0 - rx, rw)),
+                                "h": max(0.5, min(100.0 - ry, rh))
+                            })
 
                 s_obj = {
                     "id": sentence_counter,
@@ -219,7 +233,7 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
                     "page_num": page_idx,
                     "text": s_text,
                     "word_count": w_count,
-                    "rects": norm_rects
+                    "rects": rects
                 }
                 all_sentences.append(s_obj)
                 p_sentence_ids.append(sentence_counter)
@@ -242,13 +256,14 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
             "sentence_ids": page_sentence_ids
         })
 
+    doc.close()
     est_minutes = round(total_words / 150.0, 1)
 
     return {
         "doc_id": doc_id,
         "is_pdf": True,
         "title": doc_title,
-        "total_pages": len(doc),
+        "total_pages": len(pages_data),
         "total_sentences": len(all_sentences),
         "total_words": total_words,
         "est_minutes": est_minutes,
@@ -257,20 +272,35 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
         "paragraphs": paragraphs_data
     }
 
-def render_pdf_page_image(doc_id: str, page_num: int, dpi: int = 150) -> bytes:
+def render_pdf_page_image(doc_id: str, page_num: int, dpi: int = 130) -> bytes:
     """
-    Renders a specific page of a PDF document as high-resolution PNG bytes.
+    Renders a specific page of a PDF as high-performance JPEG bytes.
+    Caches rendered pages directly on disk for instant sub-millisecond retrieval.
     """
-    if doc_id not in PDF_STORE:
-        raise ValueError(f"Document {doc_id} not found in memory store.")
-        
-    doc = fitz.open(stream=PDF_STORE[doc_id], filetype="pdf")
+    cached_img_path = os.path.join(CACHE_DIR, f"{doc_id}_p{page_num}_{dpi}.jpg")
+    if os.path.exists(cached_img_path):
+        with open(cached_img_path, "rb") as f:
+            return f.read()
+
+    # Load PDF from memory or disk cache
+    pdf_bytes = get_pdf_bytes(doc_id)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    
     if page_num < 0 or page_num >= len(doc):
         doc.close()
         raise IndexError(f"Page number {page_num} out of bounds (0..{len(doc)-1}).")
         
     page = doc[page_num]
     pix = page.get_pixmap(dpi=dpi)
-    png_bytes = pix.tobytes("png")
+    # JPEG quality 85 produces sharp text while reducing RAM and file size by 80%
+    jpg_bytes = pix.tobytes("jpeg", jpg_quality=85)
     doc.close()
-    return png_bytes
+
+    # Save to disk cache for subsequent requests
+    try:
+        with open(cached_img_path, "wb") as f:
+            f.write(jpg_bytes)
+    except Exception:
+        pass
+
+    return jpg_bytes

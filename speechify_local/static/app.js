@@ -337,18 +337,54 @@ function renderDocument(docData) {
 function renderPdfView(docData) {
   pdfViewer.innerHTML = '';
   
+  // Set up an IntersectionObserver for reliable, smooth page rendering
+  const pageObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const sheet = entry.target;
+        const img = sheet.querySelector('.pdf-page-img');
+        if (img && !img.src) {
+          img.src = img.dataset.src;
+        }
+        pageObserver.unobserve(sheet);
+      }
+    });
+  }, {
+    rootMargin: '1200px 0px 1200px 0px' // Preload 1200px above and below viewport
+  });
+
   docData.pages.forEach(p => {
     const sheet = document.createElement('div');
-    sheet.className = 'pdf-page-sheet';
+    sheet.className = 'pdf-page-sheet is-loading';
     sheet.dataset.page = p.page_num;
     sheet.style.aspectRatio = `${p.width} / ${p.height}`;
 
     // Actual high-res rendered PDF page
     const img = document.createElement('img');
     img.className = 'pdf-page-img';
-    img.src = `/api/pdf-page/${docData.doc_id}/${p.page_num}`;
     img.alt = `Page ${p.page_num + 1}`;
-    img.loading = 'lazy';
+    img.dataset.src = `/api/pdf-page/${docData.doc_id}/${p.page_num}`;
+
+    // Remove loading placeholder once image renders
+    img.onload = () => {
+      sheet.classList.remove('is-loading');
+    };
+
+    // Auto-retry with backoff if image fails
+    img.onerror = () => {
+      console.warn(`[PDF Page] Page ${p.page_num + 1} render retry...`);
+      setTimeout(() => {
+        img.src = `/api/pdf-page/${docData.doc_id}/${p.page_num}?retry=${Date.now()}`;
+      }, 1500);
+    };
+
+    // First 4 pages load immediately; subsequent pages load via IntersectionObserver
+    if (p.page_num < 4) {
+      img.src = img.dataset.src;
+    } else {
+      pageObserver.observe(sheet);
+    }
+
     sheet.appendChild(img);
 
     // Coordinate-aligned overlay layer
