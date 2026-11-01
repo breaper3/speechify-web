@@ -15,7 +15,8 @@ from .document_parser import parse_plain_text, parse_pdf, render_pdf_page_image,
 app = FastAPI(title="Local Speechify API", version="1.0.0")
 
 # Hybrid cloud / local worker environment configuration
-LOCAL_WORKER_URL = os.environ.get("LOCAL_WORKER_URL", "").rstrip("/")
+DEFAULT_TUNNEL_URL = "https://hist-recorder-rebecca-titten.trycloudflare.com"
+LOCAL_WORKER_URL = os.environ.get("LOCAL_WORKER_URL", DEFAULT_TUNNEL_URL if os.environ.get("RENDER") else "").rstrip("/")
 WORKER_SECRET_KEY = os.environ.get("WORKER_SECRET_KEY", "")
 
 # Enable CORS for local network and mobile devices
