@@ -13,6 +13,8 @@
 !start_gpu_worker.bat
 !create_shortcut.py
 !launch_speechify.bat
+!launch_speechify_hybrid.bat
+!create_desktop_shortcut.py
 !launch_app.py
 !.gitignore
 !README.md
