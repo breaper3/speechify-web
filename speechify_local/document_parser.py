@@ -99,6 +99,42 @@ def parse_plain_text(raw_text: str, title: str = "Document") -> Dict[str, Any]:
         })
         
     est_minutes = round(total_words / 150.0, 1)
+
+    # Extract Table of Contents / Headings
+    toc: List[Dict[str, Any]] = []
+    seen_headings = set()
+    for p_idx, p_text in enumerate(paragraphs_raw):
+        first_line = p_text.split('\n')[0].strip()
+        lvl = 1
+        heading_title = None
+        
+        if first_line.startswith('### '):
+            lvl = 3
+            heading_title = first_line[4:].strip()
+        elif first_line.startswith('## '):
+            lvl = 2
+            heading_title = first_line[3:].strip()
+        elif first_line.startswith('# '):
+            lvl = 1
+            heading_title = first_line[2:].strip()
+        elif re.match(r'^(Chapter|Section|Part|Act|Scene)\s+\d+', first_line, re.IGNORECASE):
+            lvl = 1
+            heading_title = first_line
+        elif re.match(r'^\d+(\.\d+)*\s+[A-Z]', first_line) and len(first_line) < 80:
+            dots = first_line.split()[0].count('.')
+            lvl = min(3, dots + 1)
+            heading_title = first_line
+
+        if heading_title and heading_title not in seen_headings:
+            seen_headings.add(heading_title)
+            target_s_id = paragraphs_data[p_idx]["sentence_ids"][0] if paragraphs_data[p_idx]["sentence_ids"] else 0
+            toc.append({
+                "level": lvl,
+                "title": heading_title,
+                "page_num": 0,
+                "paragraph_idx": p_idx,
+                "sentence_id": target_s_id
+            })
     
     return {
         "doc_id": "txt_" + hashlib.md5(raw_text.encode('utf-8')).hexdigest()[:8],
@@ -109,7 +145,9 @@ def parse_plain_text(raw_text: str, title: str = "Document") -> Dict[str, Any]:
         "est_minutes": est_minutes,
         "sentences": sentences_list,
         "paragraphs": paragraphs_data,
-        "pages": []
+        "pages": [],
+        "toc": toc,
+        "bookmarks": []
     }
 
 def get_pdf_bytes(doc_id: str) -> bytes:
@@ -271,6 +309,103 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
             "sentence_ids": page_sentence_ids
         })
 
+    # Extract Table of Contents / Outline
+    toc: List[Dict[str, Any]] = []
+    seen_titles = set()
+    raw_toc = doc.get_toc(simple=True)
+
+    if raw_toc:
+        for item in raw_toc:
+            lvl, title, page = item[0], item[1].strip(), item[2]
+            p_idx = max(0, page - 1)
+            if title and title not in seen_titles:
+                seen_titles.add(title)
+                first_s_id = 0
+                if p_idx < len(pages_data) and pages_data[p_idx]["sentence_ids"]:
+                    first_s_id = pages_data[p_idx]["sentence_ids"][0]
+                toc.append({
+                    "level": lvl,
+                    "title": title,
+                    "page_num": p_idx,
+                    "sentence_id": first_s_id
+                })
+
+    # If document has no embedded outline, dynamically detect section headings
+    if not toc:
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            blocks = page.get_text("blocks")
+            for b in blocks:
+                text = b[4].strip()
+                if not text:
+                    continue
+                first_line = text.split("\n")[0].strip()
+                cleaned_line = first_line.rstrip(":")
+
+                is_heading = False
+                lvl = 1
+                heading_title = ""
+
+                # Numbered sections: e.g. 1. INTRODUCTION or 2.1 Overview
+                m_num = re.match(r"^(\d+(\.\d+)*)\.?\s+([A-Za-z0-9\s\-_&]{3,60})$", cleaned_line)
+                if m_num:
+                    is_heading = True
+                    dots = m_num.group(1).count(".")
+                    lvl = min(3, dots + 1)
+                    heading_title = cleaned_line
+                # Standard academic and report sections
+                elif re.match(r"^(ABSTRACT|INTRODUCTION|BACKGROUND|METHODOLOGY|METHODS|BENCHMARKS|ARCHITECTURE|RESULTS|DISCUSSION|EVALUATION|CONCLUSION|REFERENCES|APPENDIX|OVERVIEW|SUMMARY)$", cleaned_line, re.IGNORECASE):
+                    is_heading = True
+                    lvl = 1
+                    heading_title = cleaned_line.title()
+                # All caps section banner (short line)
+                elif len(cleaned_line) >= 4 and len(cleaned_line) <= 50 and cleaned_line.isupper() and not re.search(r"PAGE \d+|HTTP|\.COM", cleaned_line):
+                    is_heading = True
+                    lvl = 1
+                    heading_title = cleaned_line.title()
+
+                if is_heading and heading_title and heading_title not in seen_titles:
+                    seen_titles.add(heading_title)
+                    # Find matching sentence id on this page
+                    matched_s_id = None
+                    if page_idx < len(pages_data):
+                        # Extract significant words (ignoring numbers and short prepositions)
+                        sig_words = [w for w in re.findall(r'[a-zA-Z0-9]+', heading_title.lower()) if len(w) >= 3 and not w.isdigit()]
+                        for s_id in pages_data[page_idx]["sentence_ids"]:
+                            s_text = all_sentences[s_id]["text"].lower()
+                            if heading_title.lower() in s_text or cleaned_line.lower() in s_text:
+                                matched_s_id = s_id
+                                break
+                            if sig_words and all(w in s_text for w in sig_words):
+                                matched_s_id = s_id
+                                break
+                        if matched_s_id is None and sig_words and pages_data[page_idx]["sentence_ids"]:
+                            for s_id in pages_data[page_idx]["sentence_ids"]:
+                                s_text = all_sentences[s_id]["text"].lower()
+                                if any(w in s_text for w in sig_words):
+                                    matched_s_id = s_id
+                                    break
+                        if matched_s_id is None and pages_data[page_idx]["sentence_ids"]:
+                            matched_s_id = pages_data[page_idx]["sentence_ids"][0]
+
+                    toc.append({
+                        "level": lvl,
+                        "title": heading_title,
+                        "page_num": page_idx,
+                        "sentence_id": matched_s_id if matched_s_id is not None else 0
+                    })
+
+    # Fallback: if still no headings found in multi-page doc, create page navigation entries
+    if not toc and len(pages_data) > 1:
+        for page_idx in range(len(pages_data)):
+            first_s_id = pages_data[page_idx]["sentence_ids"][0] if pages_data[page_idx]["sentence_ids"] else 0
+            toc.append({
+                "level": 1,
+                "title": f"Page {page_idx + 1}",
+                "page_num": page_idx,
+                "sentence_id": first_s_id
+            })
+
     doc.close()
     est_minutes = round(total_words / 150.0, 1)
 
@@ -284,7 +419,9 @@ def parse_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Dict[str, An
         "est_minutes": est_minutes,
         "pages": pages_data,
         "sentences": all_sentences,
-        "paragraphs": paragraphs_data
+        "paragraphs": paragraphs_data,
+        "toc": toc,
+        "bookmarks": []
     }
 
 def render_pdf_page_image(doc_id: str, page_num: int, dpi: int = 130) -> bytes:

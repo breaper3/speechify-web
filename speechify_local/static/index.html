@@ -20,6 +20,14 @@
   <!-- Top Navigation Header -->
   <header class="app-header">
     <div class="header-left">
+      <!-- Toggle Table of Contents & Bookmarks Sidebar -->
+      <button class="icon-btn" id="btnToggleNavPanel" title="Table of Contents & Bookmarks (Ctrl+B)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
       <div class="logo">
         <span class="logo-icon">⚡</span>
         <span class="logo-text">Speechify <span class="badge-local">LOCAL</span></span>
@@ -88,6 +96,11 @@
         </div>
       </div>
 
+      <!-- Bookmark Active Sentence Button -->
+      <button class="icon-btn" id="btnHeaderBookmark" title="Bookmark current sentence (B)">
+        <svg class="icon-bookmark-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+      </button>
+
       <button class="icon-btn" id="btnOpenSearch" title="Search document (Ctrl+F)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
       </button>
@@ -129,6 +142,51 @@
       <button class="search-btn close-btn" id="btnCloseSearch" title="Close search (Esc)">✕</button>
     </div>
   </div>
+
+  <!-- Collapsible Navigation Sidebar (Table of Contents & Bookmarks) -->
+  <aside class="nav-sidebar hidden" id="navSidebar" aria-label="Table of Contents and Bookmarks">
+    <div class="nav-sidebar-header">
+      <div class="nav-tabs">
+        <button class="nav-tab-btn active" id="tabBtnToc" data-tab="toc">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          <span>Contents</span>
+          <span class="nav-tab-count" id="tocCountBadge">0</span>
+        </button>
+        <button class="nav-tab-btn" id="tabBtnBookmarks" data-tab="bookmarks">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+          <span>Bookmarks</span>
+          <span class="nav-tab-count" id="bookmarkCountBadge">0</span>
+        </button>
+      </div>
+      <button class="nav-sidebar-close" id="btnCloseNavSidebar" title="Close Panel (Esc)">✕</button>
+    </div>
+
+    <!-- Tab 1: Table of Contents -->
+    <div class="nav-tab-content active" id="navTabToc">
+      <div class="nav-search-box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="tocSearchInput" placeholder="Filter headings..." autocomplete="off">
+        <button class="nav-search-clear hidden" id="btnClearTocSearch">✕</button>
+      </div>
+      <div class="nav-list" id="tocList">
+        <!-- Rendered TOC items with level indent & page badges -->
+      </div>
+    </div>
+
+    <!-- Tab 2: Bookmarks -->
+    <div class="nav-tab-content hidden" id="navTabBookmarks">
+      <div class="nav-bookmark-actions">
+        <button class="btn btn-primary btn-sm btn-block" id="btnSidebarAddBookmark">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>Bookmark Current Position</span>
+        </button>
+      </div>
+      <div class="nav-list" id="bookmarkList">
+        <!-- Rendered user bookmarks with page badge, sentence snippet, timestamp, delete button -->
+      </div>
+    </div>
+  </aside>
+  <div class="nav-sidebar-backdrop hidden" id="navSidebarBackdrop"></div>
 
   <!-- Main Canvas Container -->
   <main class="reader-container" id="readerContainer">
@@ -181,6 +239,14 @@
             <line x1="8" y1="7" x2="16" y2="7"></line>
             <line x1="8" y1="12" x2="16" y2="12"></line>
           </svg>
+        </button>
+      </div>
+
+      <div class="doc-zoom-sep"></div>
+
+      <div class="doc-zoom-group">
+        <button class="doc-zoom-btn" id="btnDocBookmark" title="Bookmark sentence (B)">
+          <svg class="icon-bookmark-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
         </button>
       </div>
     </aside>
@@ -400,6 +466,11 @@
           <span class="drawer-btn-icon">🔍</span>
           <span class="drawer-btn-title">Search in Document</span>
           <span class="drawer-btn-desc">Find text & phrases</span>
+        </button>
+        <button class="drawer-action-btn" id="btnDrawerNavPanel">
+          <span class="drawer-btn-icon">📑</span>
+          <span class="drawer-btn-title">Contents & Bookmarks</span>
+          <span class="drawer-btn-desc">Table of contents and bookmarks</span>
         </button>
         <button class="drawer-action-btn" id="btnDrawerTheme">
           <span class="drawer-btn-icon" id="drawerThemeIcon">🌓</span>

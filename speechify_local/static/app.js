@@ -102,6 +102,26 @@ const docZoomText = document.getElementById('docZoomText');
 const docZoomDropdown = document.getElementById('docZoomDropdown');
 const btnFitWidth = document.getElementById('btnFitWidth');
 const btnFitPage = document.getElementById('btnFitPage');
+const btnDocBookmark = document.getElementById('btnDocBookmark');
+const btnHeaderBookmark = document.getElementById('btnHeaderBookmark');
+
+// Navigation Sidebar Elements (Table of Contents & Bookmarks)
+const btnToggleNavPanel = document.getElementById('btnToggleNavPanel');
+const navSidebar = document.getElementById('navSidebar');
+const navSidebarBackdrop = document.getElementById('navSidebarBackdrop');
+const btnCloseNavSidebar = document.getElementById('btnCloseNavSidebar');
+const tabBtnToc = document.getElementById('tabBtnToc');
+const tabBtnBookmarks = document.getElementById('tabBtnBookmarks');
+const navTabToc = document.getElementById('navTabToc');
+const navTabBookmarks = document.getElementById('navTabBookmarks');
+const tocCountBadge = document.getElementById('tocCountBadge');
+const bookmarkCountBadge = document.getElementById('bookmarkCountBadge');
+const tocSearchInput = document.getElementById('tocSearchInput');
+const btnClearTocSearch = document.getElementById('btnClearTocSearch');
+const tocList = document.getElementById('tocList');
+const btnSidebarAddBookmark = document.getElementById('btnSidebarAddBookmark');
+const bookmarkList = document.getElementById('bookmarkList');
+const btnDrawerNavPanel = document.getElementById('btnDrawerNavPanel');
 
 // Mobile Mini-Player Bar Elements
 const dockMobileBar = document.getElementById('dockMobileBar');
@@ -941,6 +961,404 @@ async function loadDocumentFromText(title, rawText) {
 }
 
 // ==========================================================================
+// Toast Notification Utility
+// ==========================================================================
+function showAppToast(message, duration = 2200) {
+  let toast = document.getElementById('appNotificationToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'appNotificationToast';
+    toast.className = 'app-notification-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('visible');
+  if (toast._timer) clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.classList.remove('visible');
+  }, duration);
+}
+
+// ==========================================================================
+// Table of Contents & Bookmarks Engine
+// ==========================================================================
+function generateClientToc(docData) {
+  if (!docData) return [];
+  if (Array.isArray(docData.toc) && docData.toc.length > 0) return docData.toc;
+
+  const toc = [];
+  const seen = new Set();
+
+  if (Array.isArray(docData.sentences)) {
+    docData.sentences.forEach((s, idx) => {
+      const text = (s.text || '').trim();
+      const firstLine = text.split('\n')[0].trim().replace(/:$/, '');
+      if (!firstLine || firstLine.length < 3 || firstLine.length > 70) return;
+
+      let isHeading = false;
+      let lvl = 1;
+      let title = '';
+
+      // Numbered sections: e.g. "1. INTRODUCTION", "2.1 Architecture"
+      const mNum = firstLine.match(/^(\d+(\.\d+)*)\.?\s+([A-Za-z0-9\s\-_&]{3,60})$/);
+      if (mNum) {
+        isHeading = true;
+        const dots = (mNum[1].match(/\./g) || []).length;
+        lvl = Math.min(3, dots + 1);
+        title = firstLine;
+      }
+      // Standard academic / report headings
+      else if (/^(ABSTRACT|INTRODUCTION|BACKGROUND|METHODOLOGY|METHODS|BENCHMARKS|ARCHITECTURE|RESULTS|DISCUSSION|EVALUATION|CONCLUSION|REFERENCES|APPENDIX|OVERVIEW|SUMMARY)$/i.test(firstLine)) {
+        isHeading = true;
+        lvl = 1;
+        title = firstLine.charAt(0).toUpperCase() + firstLine.slice(1).toLowerCase();
+      }
+      // Markdown headings
+      else if (firstLine.startsWith('#')) {
+        const hashMatch = firstLine.match(/^(#{1,3})\s+(.*)$/);
+        if (hashMatch) {
+          isHeading = true;
+          lvl = hashMatch[1].length;
+          title = hashMatch[2].trim();
+        }
+      }
+      // ALL CAPS banner
+      else if (firstLine.length >= 4 && firstLine.length <= 45 && firstLine === firstLine.toUpperCase() && !/PAGE \d+|HTTP|\.COM/i.test(firstLine)) {
+        isHeading = true;
+        lvl = 1;
+        title = firstLine;
+      }
+
+      if (isHeading && title && !seen.has(title.toLowerCase())) {
+        seen.add(title.toLowerCase());
+        const pageNum = (typeof s.page_num === 'number') ? s.page_num : 0;
+        toc.push({
+          level: lvl,
+          title: title,
+          page_num: pageNum,
+          sentence_id: idx
+        });
+      }
+    });
+  }
+
+  // Fallback: If no headings detected and doc has multiple pages, create Page navigation
+  if (toc.length === 0 && Array.isArray(docData.pages) && docData.pages.length > 1) {
+    docData.pages.forEach((p, pIdx) => {
+      const firstSid = (p.sentence_ids && p.sentence_ids.length > 0) ? p.sentence_ids[0] : 0;
+      toc.push({
+        level: 1,
+        title: `Page ${pIdx + 1}`,
+        page_num: pIdx,
+        sentence_id: firstSid
+      });
+    });
+  }
+
+  docData.toc = toc;
+  return toc;
+}
+
+function openNavSidebar(targetTab = null) {
+  if (!navSidebar) return;
+  if (targetTab === 'bookmarks') {
+    switchNavTab('bookmarks');
+  } else if (targetTab === 'toc') {
+    switchNavTab('toc');
+  }
+  navSidebar.classList.remove('hidden');
+  if (navSidebarBackdrop) navSidebarBackdrop.classList.remove('hidden');
+  renderToc(tocSearchInput ? tocSearchInput.value : '');
+  renderBookmarks();
+}
+
+function closeNavSidebar() {
+  if (navSidebar) navSidebar.classList.add('hidden');
+  if (navSidebarBackdrop) navSidebarBackdrop.classList.add('hidden');
+}
+
+function toggleNavSidebar() {
+  if (!navSidebar) return;
+  if (navSidebar.classList.contains('hidden')) {
+    openNavSidebar();
+  } else {
+    closeNavSidebar();
+  }
+}
+
+function switchNavTab(tabName) {
+  if (tabName === 'toc') {
+    if (tabBtnToc) tabBtnToc.classList.add('active');
+    if (tabBtnBookmarks) tabBtnBookmarks.classList.remove('active');
+    if (navTabToc) navTabToc.classList.remove('hidden');
+    if (navTabBookmarks) navTabBookmarks.classList.add('hidden');
+  } else if (tabName === 'bookmarks') {
+    if (tabBtnBookmarks) tabBtnBookmarks.classList.add('active');
+    if (tabBtnToc) tabBtnToc.classList.remove('active');
+    if (navTabBookmarks) navTabBookmarks.classList.remove('hidden');
+    if (navTabToc) navTabToc.classList.add('hidden');
+  }
+}
+
+function renderToc(filterText = '') {
+  if (!tocList) return;
+  tocList.innerHTML = '';
+
+  const doc = state.document;
+  if (!doc) {
+    tocList.innerHTML = '<div class="nav-empty"><div class="nav-empty-icon">📖</div>No active document</div>';
+    if (tocCountBadge) tocCountBadge.textContent = '0';
+    return;
+  }
+
+  const tocItems = (Array.isArray(doc.toc) && doc.toc.length > 0) ? doc.toc : generateClientToc(doc);
+  if (tocCountBadge) tocCountBadge.textContent = tocItems.length.toString();
+
+  const query = (filterText || '').trim().toLowerCase();
+  const filtered = query
+    ? tocItems.filter(it => it.title.toLowerCase().includes(query))
+    : tocItems;
+
+  if (filtered.length === 0) {
+    tocList.innerHTML = `
+      <div class="nav-empty">
+        <div class="nav-empty-icon">📑</div>
+        ${query ? 'No matching sections found' : 'No Table of Contents in this document'}
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(item => {
+    const el = document.createElement('div');
+    el.className = `toc-item level-${item.level || 1}`;
+    el.dataset.sentenceId = item.sentence_id;
+    el.dataset.page = item.page_num;
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'toc-item-title';
+    titleSpan.textContent = item.title;
+    titleSpan.title = item.title;
+
+    const pageSpan = document.createElement('span');
+    pageSpan.className = 'toc-item-page';
+    pageSpan.textContent = `P. ${(item.page_num || 0) + 1}`;
+
+    el.appendChild(titleSpan);
+    el.appendChild(pageSpan);
+
+    el.addEventListener('click', () => {
+      jumpToSentence(item.sentence_id, false);
+      highlightActiveTocItem(item.sentence_id);
+      if (window.innerWidth <= 768) {
+        closeNavSidebar();
+      }
+    });
+
+    tocList.appendChild(el);
+  });
+
+  highlightActiveTocItem(state.currentIndex);
+}
+
+function highlightActiveTocItem(sentenceId) {
+  if (!tocList || !state.document || !Array.isArray(state.document.toc)) return;
+  const tocItems = state.document.toc;
+  let activeItem = null;
+  for (let i = 0; i < tocItems.length; i++) {
+    if (sentenceId >= tocItems[i].sentence_id) {
+      activeItem = tocItems[i];
+    } else {
+      break;
+    }
+  }
+
+  const allDomItems = tocList.querySelectorAll('.toc-item');
+  allDomItems.forEach(el => {
+    if (activeItem && parseInt(el.dataset.sentenceId, 10) === activeItem.sentence_id) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return '';
+  const diffSec = Math.floor((Date.now() - ts) / 1000);
+  if (diffSec < 60) return 'Just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  const d = new Date(ts);
+  return d.toLocaleDateString();
+}
+
+function renderBookmarks() {
+  if (!bookmarkList) return;
+  bookmarkList.innerHTML = '';
+
+  const doc = state.document;
+  if (!doc) {
+    bookmarkList.innerHTML = '<div class="nav-empty"><div class="nav-empty-icon">🔖</div>No active document</div>';
+    if (bookmarkCountBadge) bookmarkCountBadge.textContent = '0';
+    return;
+  }
+
+  if (!Array.isArray(doc.bookmarks)) {
+    doc.bookmarks = [];
+  }
+
+  if (bookmarkCountBadge) {
+    bookmarkCountBadge.textContent = doc.bookmarks.length.toString();
+  }
+
+  if (doc.bookmarks.length === 0) {
+    bookmarkList.innerHTML = `
+      <div class="nav-empty">
+        <div class="nav-empty-icon">🔖</div>
+        <p style="font-weight:600; margin-bottom:4px;">No bookmarks yet</p>
+        <span style="font-size:0.75rem; color:var(--text-muted); display:block;">
+          Click the bookmark button (🔖) or press 'B' while reading to save important passages.
+        </span>
+      </div>
+    `;
+    return;
+  }
+
+  // Sort bookmarks by sentence index
+  const sorted = [...doc.bookmarks].sort((a, b) => a.sentence_id - b.sentence_id);
+
+  sorted.forEach(bm => {
+    const card = document.createElement('div');
+    card.className = 'bookmark-item';
+    if (bm.sentence_id === state.currentIndex) {
+      card.classList.add('active');
+    }
+
+    const headerRow = document.createElement('div');
+    headerRow.className = 'bookmark-item-header';
+
+    const pageBadge = document.createElement('span');
+    pageBadge.className = 'bookmark-page-badge';
+    pageBadge.textContent = `Page ${(bm.page_num || 0) + 1}`;
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'bookmark-delete-btn';
+    delBtn.title = 'Remove bookmark';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeBookmark(bm.id);
+    });
+
+    headerRow.appendChild(pageBadge);
+    headerRow.appendChild(delBtn);
+
+    const textEl = document.createElement('div');
+    textEl.className = 'bookmark-item-text';
+    textEl.textContent = bm.text ? `"${bm.text.slice(0, 110)}..."` : `Sentence ${bm.sentence_id + 1}`;
+
+    const footerRow = document.createElement('div');
+    footerRow.className = 'bookmark-item-footer';
+    const timeStr = bm.created_at ? formatRelativeTime(bm.created_at) : 'Saved';
+    footerRow.innerHTML = `<span>Sentence ${bm.sentence_id + 1}</span><span>${timeStr}</span>`;
+
+    card.appendChild(headerRow);
+    card.appendChild(textEl);
+    card.appendChild(footerRow);
+
+    card.addEventListener('click', () => {
+      jumpToSentence(bm.sentence_id, false);
+      if (window.innerWidth <= 768) {
+        closeNavSidebar();
+      }
+    });
+
+    bookmarkList.appendChild(card);
+  });
+}
+
+function toggleBookmarkCurrentPosition() {
+  if (!state.document || !state.document.sentences) {
+    showAppToast("Open a document to add bookmarks");
+    return;
+  }
+
+  if (!Array.isArray(state.document.bookmarks)) {
+    state.document.bookmarks = [];
+  }
+
+  const sIdx = state.currentIndex;
+  const existingIdx = state.document.bookmarks.findIndex(b => b.sentence_id === sIdx);
+
+  if (existingIdx >= 0) {
+    const removed = state.document.bookmarks.splice(existingIdx, 1)[0];
+    saveDocumentBookmarks();
+    showAppToast(`Bookmark removed for Page ${(removed.page_num || 0) + 1}`);
+  } else {
+    const s = state.document.sentences[sIdx];
+    const pageNum = (s && typeof s.page_num === 'number') ? s.page_num : (state.document.current_page || 0);
+    const excerpt = (s && s.text) ? s.text : `Sentence ${sIdx + 1}`;
+    const newBm = {
+      id: 'bm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      doc_id: state.document.doc_id,
+      sentence_id: sIdx,
+      page_num: pageNum,
+      title: `Page ${pageNum + 1}`,
+      text: excerpt,
+      created_at: Date.now()
+    };
+    state.document.bookmarks.push(newBm);
+    saveDocumentBookmarks();
+    showAppToast(`🔖 Bookmarked Page ${pageNum + 1}`);
+  }
+
+  renderBookmarks();
+  updateBookmarkButtonState();
+}
+
+function removeBookmark(bookmarkId) {
+  if (!state.document || !Array.isArray(state.document.bookmarks)) return;
+  const idx = state.document.bookmarks.findIndex(b => b.id === bookmarkId);
+  if (idx >= 0) {
+    state.document.bookmarks.splice(idx, 1);
+    saveDocumentBookmarks();
+    renderBookmarks();
+    updateBookmarkButtonState();
+    showAppToast("Bookmark removed");
+  }
+}
+
+async function saveDocumentBookmarks() {
+  if (!state.document) return;
+  // 1. Instant local IndexedDB save
+  idbSaveDocument(state.document);
+
+  // 2. Cloud sync if document exists on server
+  if (state.document.doc_id) {
+    try {
+      fetch(`/api/documents/${state.document.doc_id}/bookmarks`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookmarks: state.document.bookmarks || [] })
+      }).catch(() => {});
+    } catch (_) {}
+  }
+}
+
+function updateBookmarkButtonState() {
+  const isBookmarked = !!(state.document && Array.isArray(state.document.bookmarks) && state.document.bookmarks.some(b => b.sentence_id === state.currentIndex));
+  if (btnHeaderBookmark) {
+    btnHeaderBookmark.classList.toggle('is-bookmarked', isBookmarked);
+    btnHeaderBookmark.title = isBookmarked ? 'Remove bookmark from current sentence (B)' : 'Bookmark current sentence (B)';
+  }
+  if (btnDocBookmark) {
+    btnDocBookmark.classList.toggle('is-bookmarked', isBookmarked);
+    btnDocBookmark.title = isBookmarked ? 'Remove bookmark (B)' : 'Bookmark sentence (B)';
+  }
+}
+
+// ==========================================================================
 // Document Rendering (Visual PDF vs Text Reader)
 // ==========================================================================
 function renderDocument(docData) {
@@ -952,9 +1370,18 @@ function renderDocument(docData) {
   closeSearch();
   pauseAudio();
 
+  // Ensure TOC and Bookmarks structures exist
+  docData.toc = (Array.isArray(docData.toc) && docData.toc.length > 0) ? docData.toc : generateClientToc(docData);
+  docData.bookmarks = Array.isArray(docData.bookmarks) ? docData.bookmarks : [];
+
   // Save to IndexedDB and update active state
   idbSaveDocument(docData);
   refreshLibraryBadge();
+
+  // Render Table of Contents & Bookmarks
+  renderToc();
+  renderBookmarks();
+  updateBookmarkButtonState();
 
   if (btnShareDoc) btnShareDoc.classList.remove('hidden');
 
@@ -1343,6 +1770,10 @@ function updateActiveSentenceHighlight(index) {
       smoothScrollToActiveElement(activeEl);
     }
   }
+
+  // Update Bookmark indicator and active Table of Contents item
+  updateBookmarkButtonState();
+  highlightActiveTocItem(index);
 }
 
 function updateProgressUI() {
@@ -1616,6 +2047,10 @@ function setupKeyboardShortcuts() {
     }
 
     if (e.code === 'Escape') {
+      if (navSidebar && !navSidebar.classList.contains('hidden')) {
+        closeNavSidebar();
+        return;
+      }
       if (state.search.isOpen) {
         closeSearch();
         return;
@@ -1626,6 +2061,20 @@ function setupKeyboardShortcuts() {
     }
 
     if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+    // Ctrl+B / Cmd+B to toggle Table of Contents & Bookmarks Sidebar
+    if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyB' || e.key === 'b')) {
+      e.preventDefault();
+      toggleNavSidebar();
+      return;
+    }
+
+    // Press 'B' (alone) to bookmark/unbookmark current sentence
+    if (e.code === 'KeyB' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleBookmarkCurrentPosition();
+      return;
+    }
 
     // Press 'F' to toggle fullscreen
     if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -2022,6 +2471,40 @@ function setupEventListeners() {
         initialPinchDist = null;
       }
     }, { passive: true });
+  }
+
+  // Table of Contents & Bookmarks Sidebar Listeners
+  if (btnToggleNavPanel) btnToggleNavPanel.addEventListener('click', toggleNavSidebar);
+  if (btnCloseNavSidebar) btnCloseNavSidebar.addEventListener('click', closeNavSidebar);
+  if (navSidebarBackdrop) navSidebarBackdrop.addEventListener('click', closeNavSidebar);
+
+  if (tabBtnToc) tabBtnToc.addEventListener('click', () => switchNavTab('toc'));
+  if (tabBtnBookmarks) tabBtnBookmarks.addEventListener('click', () => switchNavTab('bookmarks'));
+
+  if (btnSidebarAddBookmark) btnSidebarAddBookmark.addEventListener('click', toggleBookmarkCurrentPosition);
+  if (btnHeaderBookmark) btnHeaderBookmark.addEventListener('click', toggleBookmarkCurrentPosition);
+  if (btnDocBookmark) btnDocBookmark.addEventListener('click', toggleBookmarkCurrentPosition);
+
+  if (btnDrawerNavPanel) {
+    btnDrawerNavPanel.addEventListener('click', () => {
+      closeMobileDrawer();
+      openNavSidebar();
+    });
+  }
+
+  if (tocSearchInput) {
+    tocSearchInput.addEventListener('input', (e) => {
+      renderToc(e.target.value);
+      if (btnClearTocSearch) btnClearTocSearch.classList.toggle('hidden', !e.target.value);
+    });
+  }
+
+  if (btnClearTocSearch) {
+    btnClearTocSearch.addEventListener('click', () => {
+      tocSearchInput.value = '';
+      btnClearTocSearch.classList.add('hidden');
+      renderToc('');
+    });
   }
 
   // Modal Open/Close

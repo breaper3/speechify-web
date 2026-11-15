@@ -79,6 +79,9 @@ class ProgressUpdateRequest(BaseModel):
     speed: Optional[float] = None
     voice: Optional[str] = None
 
+class BookmarksUpdateRequest(BaseModel):
+    bookmarks: List[Dict[str, Any]]
+
 # ==================== SYSTEM & HEALTH ENDPOINTS ====================
 
 @app.get("/api/health")
@@ -250,6 +253,33 @@ def get_shared_doc_endpoint(share_id: str):
     doc_data["is_shared_view"] = True
     doc_data["share_id"] = share_id
     return doc_data
+
+@app.put("/api/documents/{doc_id}/bookmarks")
+def update_bookmarks_endpoint(doc_id: str, req: BookmarksUpdateRequest, request: Request):
+    """Saves user bookmarks for a document."""
+    current_user = get_current_user(request)
+    user_id = current_user["id"] if current_user else None
+    doc_record = get_document(doc_id, user_id=user_id)
+    if not doc_record:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    doc_data = doc_record["doc_data"]
+    doc_data["bookmarks"] = req.bookmarks
+    save_document(
+        doc_id=doc_id,
+        title=doc_record["title"],
+        filename=doc_record["filename"],
+        is_pdf=bool(doc_record["is_pdf"]),
+        total_sentences=doc_record["total_sentences"],
+        total_words=doc_record["total_words"],
+        est_minutes=doc_record["est_minutes"],
+        doc_data=doc_data,
+        user_id=user_id,
+        current_sentence_index=doc_record["current_sentence_index"],
+        current_page=doc_record["current_page"],
+        speed=doc_record["speed"],
+        voice=doc_record["voice"]
+    )
+    return {"status": "ok", "count": len(req.bookmarks)}
 
 # ==================== PARSING & INGESTION ====================
 
