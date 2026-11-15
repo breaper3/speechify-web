@@ -1951,24 +1951,45 @@ function getActiveSectionOrPage() {
 
   let activeTitle = null;
   if (Array.isArray(state.document.toc) && state.document.toc.length > 0) {
+    let bestItem = null;
+    let minSentenceDist = Infinity;
+    let minPageDist = Infinity;
+
     for (let i = 0; i < state.document.toc.length; i++) {
       const it = state.document.toc[i];
-      if (typeof it.sentence_id === 'number' && state.currentIndex >= it.sentence_id) {
-        activeTitle = it.title;
-      } else if (typeof it.page_num === 'number' && curPageNum >= it.page_num) {
-        activeTitle = it.title;
-      } else {
-        break;
+      if (!it || !it.title || !it.title.trim()) continue;
+
+      const hasSid = typeof it.sentence_id === 'number' && it.sentence_id >= 0;
+      const hasPage = typeof it.page_num === 'number' && it.page_num >= 0;
+
+      if (hasSid && state.currentIndex >= it.sentence_id) {
+        const sDist = state.currentIndex - it.sentence_id;
+        if (sDist < minSentenceDist) {
+          minSentenceDist = sDist;
+          bestItem = it;
+        }
+      } else if (hasPage && curPageNum >= it.page_num) {
+        const pDist = curPageNum - it.page_num;
+        if (minSentenceDist === Infinity && pDist < minPageDist) {
+          minPageDist = pDist;
+          bestItem = it;
+        }
       }
+    }
+
+    if (bestItem && bestItem.title) {
+      activeTitle = bestItem.title.trim();
     }
   }
 
-  const hasTocTitle = !!(activeTitle && activeTitle.trim());
+  // Filter out redundant generic "Page X" titles from outline fallbacks
+  const isGenericPageTitle = activeTitle && /^page\s+\d+$/i.test(activeTitle);
+  const hasTocTitle = !!(activeTitle && !isGenericPageTitle);
   let primaryLabel = '';
   let pageInfo = state.document.is_pdf ? `Page ${displayPage} of ${totalPages}` : '';
 
   if (hasTocTitle) {
-    primaryLabel = activeTitle.trim();
+    primaryLabel = activeTitle;
   } else if (state.document.is_pdf) {
     primaryLabel = `Page ${displayPage} of ${totalPages}`;
   } else {
@@ -2013,8 +2034,8 @@ function updateProgressUI() {
   // Desktop Dock Labels: Show Table of Contents section name, or Page X of Y
   sentenceCounter.textContent = sectionInfo.primaryLabel;
   sentenceCounter.title = sectionInfo.hasTocTitle 
-    ? `${sectionInfo.primaryLabel} (${sectionInfo.pageInfo})` 
-    : sectionInfo.primaryLabel;
+    ? `${sectionInfo.primaryLabel} (${sectionInfo.pageInfo} · Sentence ${state.currentIndex + 1} of ${total})` 
+    : `${sectionInfo.primaryLabel} · Sentence ${state.currentIndex + 1} of ${total}`;
 
   if (sectionInfo.hasTocTitle && sectionInfo.pageInfo) {
     remainingTime.textContent = `P. ${sectionInfo.displayPage} · ${minsLeft}m left`;
