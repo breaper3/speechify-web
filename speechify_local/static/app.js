@@ -59,7 +59,10 @@ const dockMinimizedBar = document.getElementById('dockMinimizedBar');
 const btnMiniPlayPause = document.getElementById('btnMiniPlayPause');
 const miniPlayIcon = document.getElementById('miniPlayIcon');
 const miniPauseIcon = document.getElementById('miniPauseIcon');
+const btnMiniPrev = document.getElementById('btnMiniPrev');
+const btnMiniNext = document.getElementById('btnMiniNext');
 const miniSentenceCounter = document.getElementById('miniSentenceCounter');
+const btnHeaderTogglePlayer = document.getElementById('btnHeaderTogglePlayer');
 
 const btnPlayPause = document.getElementById('btnPlayPause');
 const playIcon = document.getElementById('playIcon');
@@ -133,6 +136,7 @@ const mobileMiniDocTitle = document.getElementById('mobileMiniDocTitle');
 const mobileMiniSnippet = document.getElementById('mobileMiniSnippet');
 const mobileMiniSpeedPill = document.getElementById('mobileMiniSpeedPill');
 const btnMobileMiniExpand = document.getElementById('btnMobileMiniExpand');
+const btnMobileMiniMinimize = document.getElementById('btnMobileMiniMinimize');
 
 // Mobile Expanded Player Sheet Elements
 const mobileSheetOverlay = document.getElementById('mobileSheetOverlay');
@@ -1678,9 +1682,42 @@ function setViewMode(mode) {
 // ==========================================================================
 // Playback Engine & Audio Queue
 // ==========================================================================
+let isAudioUnlocked = false;
+function unlockAudioContext() {
+  if (isAudioUnlocked) return;
+  try {
+    audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    audio.play().then(() => {
+      audio.pause();
+      isAudioUnlocked = true;
+    }).catch(() => {});
+  } catch (e) {}
+}
+window.addEventListener('click', unlockAudioContext, { once: true, passive: true });
+window.addEventListener('touchstart', unlockAudioContext, { once: true, passive: true });
+
 async function playSentence(index) {
   if (!state.document || index < 0 || index >= state.document.total_sentences) {
     pauseAudio();
+    return;
+  }
+
+  const sentenceObj = state.document.sentences[index];
+  if (!sentenceObj) {
+    pauseAudio();
+    return;
+  }
+
+  // Skip sentences that contain zero letters or numbers (e.g. solitary punctuation or dots)
+  const rawText = (sentenceObj.text || '').trim();
+  if (!/[a-zA-Z0-9]/.test(rawText)) {
+    console.log('[TTS Skip] Skipping non-vocal sentence:', rawText);
+    const nextIdx = index + 1;
+    if (nextIdx < state.document.total_sentences) {
+      playSentence(nextIdx);
+    } else {
+      setPlayingState(false);
+    }
     return;
   }
 
@@ -1689,25 +1726,38 @@ async function playSentence(index) {
   updateProgressUI();
   updateMediaSession(index);
 
-  const sentenceObj = state.document.sentences[index];
-  const curPage = sentenceObj ? (sentenceObj.page_num || 0) : 0;
+  const curPage = sentenceObj.page_num || 0;
   persistReadingProgress(index, curPage);
+  unlockAudioContext();
+
+  // Show active reading state immediately
+  setPlayingState(true);
   
   try {
     let blobUrl = state.audioBlobCache.get(index);
     if (!blobUrl) {
-      const audioUrl = `/api/tts?text=${encodeURIComponent(sentenceObj.text)}&voice=${state.voice}&speed=1.0`;
-      const res = await fetch(audioUrl);
-      if (!res.ok) throw new Error('Audio generation failed');
+      const audioUrl = `/api/tts?text=${encodeURIComponent(rawText)}&voice=${state.voice}&speed=1.0`;
+      let res = await fetch(audioUrl);
+      if (!res.ok) {
+        // Fallback to cloud neural voice if primary voice fails
+        console.warn('[Audio Fallback] Primary voice generation failed, trying cloud fallback...');
+        const fallbackUrl = `/api/tts?text=${encodeURIComponent(rawText)}&voice=edge:en-US-JennyNeural&speed=1.0`;
+        res = await fetch(fallbackUrl);
+        if (!res.ok) throw new Error('Audio generation failed on both primary and fallback voice');
+      }
       const blob = await res.blob();
       blobUrl = URL.createObjectURL(blob);
       state.audioBlobCache.set(index, blobUrl);
     }
 
+    // Verify user did not navigate away or pause while fetching
+    if (state.currentIndex !== index || !state.isPlaying) {
+      return;
+    }
+
     audio.src = blobUrl;
     audio.playbackRate = state.speed;
     await audio.play();
-    setPlayingState(true);
 
     // Lookahead buffering: Preload next 2 sentences immediately
     preloadNextSentence(index + 1);
@@ -2122,10 +2172,16 @@ function toggleMinimizeDock(minimize) {
   if (state.isDockMinimized) {
     playerDock.classList.add('is-minimized');
     dockMinimizedBar.classList.remove('hidden');
+    if (btnHeaderTogglePlayer) btnHeaderTogglePlayer.classList.remove('active');
   } else {
     playerDock.classList.remove('is-minimized');
     dockMinimizedBar.classList.add('hidden');
+    if (btnHeaderTogglePlayer) btnHeaderTogglePlayer.classList.add('active');
   }
+
+  try {
+    localStorage.setItem('speechify_dock_minimized', state.isDockMinimized ? '1' : '0');
+  } catch (err) {}
 }
 
 function toggleFullscreen() {
@@ -2365,9 +2421,98 @@ function setPlaybackSpeed(targetSpeed, applySnap = true) {
 }
 
 // ==========================================================================
+// Viewport Anchoring Engine (Eliminates Far-Page Teleportation on Zoom/Resize)
+// ==========================================================================
+function getZoomAnchor() {
+  if (state.viewMode !== 'pdf') {
+    const activeSentence = document.querySelector('.sentence.active-sentence');
+    if (activeSentence) {
+      const r = activeSentence.getBoundingClientRect();
+      return { type: 'element', el: activeSentence, top: r.top };
+    }
+    const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    return { type: 'scrollRatio', ratio: window.scrollY / maxScroll };
+  }
+
+  // 1. Active sentence box in view
+  const activeBox = document.querySelector('.pdf-sentence-box.active-pdf-highlight');
+  if (activeBox) {
+    const r = activeBox.getBoundingClientRect();
+    if (r.top >= -50 && r.bottom <= window.innerHeight + 50) {
+      return { type: 'element', el: activeBox, top: r.top };
+    }
+  }
+
+  // 2. Currently visible page sheet crossing anchor line (120px below top)
+  const anchorY = 120;
+  const sheets = Array.from(document.querySelectorAll('.pdf-page-sheet'));
+  for (let s of sheets) {
+    const r = s.getBoundingClientRect();
+    if (r.top <= anchorY && r.bottom >= anchorY) {
+      const pageNum = parseInt(s.dataset.page, 10);
+      const ratio = (anchorY - r.top) / Math.max(1, r.height);
+      return { type: 'sheet', pageNum, ratio, anchorY };
+    }
+  }
+
+  // 3. Fallback: first sheet below or above
+  if (sheets.length > 0) {
+    const r0 = sheets[0].getBoundingClientRect();
+    if (r0.top > anchorY) return { type: 'top' };
+    for (let s of sheets) {
+      const r = s.getBoundingClientRect();
+      if (r.bottom > 0) {
+        const pageNum = parseInt(s.dataset.page, 10);
+        const ratio = Math.max(0, (anchorY - r.top) / Math.max(1, r.height));
+        return { type: 'sheet', pageNum, ratio, anchorY };
+      }
+    }
+  }
+
+  const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  return { type: 'scrollRatio', ratio: window.scrollY / maxScroll };
+}
+
+function restoreZoomAnchor(anchor) {
+  if (!anchor) return;
+  if (anchor.type === 'top') {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    return;
+  }
+
+  // Double requestAnimationFrame guarantees CSS custom property recalculations have committed
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (anchor.type === 'element' && anchor.el && document.body.contains(anchor.el)) {
+        const r = anchor.el.getBoundingClientRect();
+        const delta = r.top - anchor.top;
+        if (Math.abs(delta) > 1) {
+          window.scrollBy({ top: delta, behavior: 'instant' });
+        }
+      } else if (anchor.type === 'sheet') {
+        const targetSheet = document.querySelector(`.pdf-page-sheet[data-page="${anchor.pageNum}"]`);
+        if (targetSheet) {
+          const r = targetSheet.getBoundingClientRect();
+          const targetY = r.top + (r.height * anchor.ratio);
+          const delta = targetY - anchor.anchorY;
+          if (Math.abs(delta) > 1) {
+            window.scrollBy({ top: delta, behavior: 'instant' });
+          }
+        }
+      } else if (anchor.type === 'scrollRatio') {
+        const newMax = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        window.scrollTo({ top: newMax * anchor.ratio, behavior: 'instant' });
+      }
+    });
+  });
+}
+
+// ==========================================================================
 // Document Zoom Engine (Adobe / Edge PDF Viewer Style)
 // ==========================================================================
 function setDocZoom(newZoom, updatePresets = true) {
+  const anchor = getZoomAnchor();
+
   // Clamp zoom between 30% and 300%
   const clamped = Math.max(0.3, Math.min(3.0, newZoom));
   state.pdfZoom = Math.round(clamped * 100) / 100;
@@ -2397,6 +2542,9 @@ function setDocZoom(newZoom, updatePresets = true) {
       }
     });
   }
+
+  // Restore viewing position so user never jumps to another page
+  restoreZoomAnchor(anchor);
 
   // Persist preference in localStorage
   try {
@@ -2745,15 +2893,27 @@ function setupEventListeners() {
     }
   });
 
-  // Dock Minimization Listeners
+  // Dock Minimization & Control Listeners
   if (btnMinimizeDock) {
     btnMinimizeDock.addEventListener('click', () => toggleMinimizeDock(true));
+  }
+  if (btnMobileMiniMinimize) {
+    btnMobileMiniMinimize.addEventListener('click', () => toggleMinimizeDock(true));
+  }
+  if (btnHeaderTogglePlayer) {
+    btnHeaderTogglePlayer.addEventListener('click', () => toggleMinimizeDock());
   }
   if (btnExpandDock) {
     btnExpandDock.addEventListener('click', () => toggleMinimizeDock(false));
   }
   if (btnMiniPlayPause) {
     btnMiniPlayPause.addEventListener('click', togglePlayPause);
+  }
+  if (btnMiniPrev) {
+    btnMiniPrev.addEventListener('click', () => jumpToSentence(state.currentIndex - 1, true));
+  }
+  if (btnMiniNext) {
+    btnMiniNext.addEventListener('click', () => jumpToSentence(state.currentIndex + 1, true));
   }
 
   // Fullscreen Listeners

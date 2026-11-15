@@ -429,7 +429,7 @@ async def tts_stream(
     if LOCAL_WORKER_URL and not is_cloud_native:
         try:
             import httpx
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=4.0) as client:
                 headers = {"X-Worker-Token": WORKER_SECRET_KEY} if WORKER_SECRET_KEY else {}
                 url = f"{LOCAL_WORKER_URL}/api/tts"
                 params = {"text": text, "voice": voice, "speed": speed}

@@ -301,7 +301,7 @@ body {
   margin: 0 auto;
   flex-shrink: 0;
   content-visibility: auto;
-  contain-intrinsic-size: 820px 1160px;
+  contain-intrinsic-size: calc(var(--base-page-width, 820px) * var(--pdf-zoom)) calc(1160px * var(--pdf-zoom));
   contain: layout paint style;
   transform: translateZ(0);
 }
@@ -1163,7 +1163,7 @@ body.theme-light .app-notification-toast {
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 32px);
-  max-width: 900px;
+  max-width: 980px;
   z-index: 50;
 }
 
@@ -1697,25 +1697,93 @@ body.theme-light .app-notification-toast {
   color: var(--text-primary);
 }
 
+.dock-minimize-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  width: auto;
+  height: 32px;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dock-minimize-btn:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.dock-btn-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mobile-mini-minimize-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mobile-mini-minimize-btn:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
 /* Minimized Dock State */
 .player-dock {
   transition: max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s ease;
 }
 
 .player-dock.is-minimized {
-  max-width: 320px;
+  max-width: 380px !important;
+  width: auto !important;
 }
 
-.player-dock.is-minimized .dock-content {
-  display: none;
+.player-dock.is-minimized .dock-content,
+.player-dock.is-minimized .dock-mobile-bar {
+  display: none !important;
 }
 
 .dock-minimized-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px;
-  gap: 12px;
+  justify-content: center;
+  padding: 6px 14px;
+  gap: 8px;
+}
+
+.dock-mini-prev,
+.dock-mini-next {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease;
+}
+
+.dock-mini-prev:hover,
+.dock-mini-next:hover {
+  color: var(--text-primary);
 }
 
 .dock-mini-play {
@@ -1744,6 +1812,7 @@ body.theme-light .app-notification-toast {
   white-space: nowrap;
   flex: 1;
   text-align: center;
+  padding: 0 4px;
 }
 
 .dock-mini-expand {
