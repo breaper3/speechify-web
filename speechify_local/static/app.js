@@ -1446,10 +1446,12 @@ function renderPdfView(docData) {
     sheet.dataset.page = p.page_num;
     sheet.style.aspectRatio = `${p.width} / ${p.height}`;
 
-    // Actual high-res rendered PDF page
+    // Actual high-res rendered PDF page with async background decoding
     const img = document.createElement('img');
     img.className = 'pdf-page-img';
     img.alt = `Page ${p.page_num + 1}`;
+    img.decoding = 'async';
+    img.loading = 'lazy';
     img.dataset.src = `/api/pdf-page/${docData.doc_id}/${p.page_num}`;
 
     // Remove loading placeholder once image renders
@@ -1726,8 +1728,20 @@ audio.addEventListener('ended', () => {
 // ==========================================================================
 // UI Updates & Dual Highlighting (PDF & Text)
 // ==========================================================================
+// User manual scroll detection to prevent fighting user scrolling
+let isUserManualScrolling = false;
+let userScrollTimer = null;
+
+window.addEventListener('scroll', () => {
+  isUserManualScrolling = true;
+  clearTimeout(userScrollTimer);
+  userScrollTimer = setTimeout(() => {
+    isUserManualScrolling = false;
+  }, 850);
+}, { passive: true });
+
 function smoothScrollToActiveElement(el) {
-  if (!el) return;
+  if (!el || isUserManualScrolling) return;
   const rect = el.getBoundingClientRect();
   const headerHeight = 70;
   const dockHeight = window.innerWidth <= 1024 ? 90 : 110;
@@ -2432,17 +2446,49 @@ function setupEventListeners() {
     }
   });
 
-  // Ctrl + Mouse Wheel for Document Zoom alone without browser zoom
+  // Ctrl + Mouse Wheel for Document Zoom (Zero scroll overhead during normal browsing)
+  let isCtrlKeyActive = false;
+  const wheelZoomHandler = (e) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      setDocZoom(state.pdfZoom + delta);
+    }
+  };
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.key === 'Control' || e.key === 'Meta') && !isCtrlKeyActive) {
+      isCtrlKeyActive = true;
+      window.addEventListener('wheel', wheelZoomHandler, { passive: false });
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Control' || e.key === 'Meta') {
+      isCtrlKeyActive = false;
+      window.removeEventListener('wheel', wheelZoomHandler);
+    }
+  });
+
+  window.addEventListener('blur', () => {
+    isCtrlKeyActive = false;
+    window.removeEventListener('wheel', wheelZoomHandler);
+  });
+
+  // Fast scrolling optimization: disable hover hit-testing while scrolling
+  let isScrollingTimer = null;
+  window.addEventListener('scroll', () => {
+    if (!document.body.classList.contains('is-scrolling')) {
+      document.body.classList.add('is-scrolling');
+    }
+    clearTimeout(isScrollingTimer);
+    isScrollingTimer = setTimeout(() => {
+      document.body.classList.remove('is-scrolling');
+    }, 120);
+  }, { passive: true });
+
   const readerContainerEl = document.getElementById('readerContainer') || document.querySelector('.reader-container');
   if (readerContainerEl) {
-    readerContainerEl.addEventListener('wheel', (e) => {
-      if (e.ctrlKey) {
-        e.preventDefault();
-        const delta = e.deltaY < 0 ? 0.08 : -0.08;
-        setDocZoom(state.pdfZoom + delta);
-      }
-    }, { passive: false });
-
     // Touch pinch to zoom for mobile devices
     let initialPinchDist = null;
     let initialPinchZoom = 1.0;

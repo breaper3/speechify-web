@@ -297,11 +297,13 @@ body {
   max-width: none;
   background-color: #ffffff;
   border-radius: 4px;
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
-  transition: width 0.12s ease-out;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   margin: 0 auto;
   flex-shrink: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 820px 1160px;
+  contain: layout paint style;
+  transform: translateZ(0);
 }
 
 .pdf-page-sheet.is-loading {
@@ -316,7 +318,7 @@ body {
 }
 
 body.theme-light .pdf-page-sheet {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
 }
 
 .pdf-page-img {
@@ -334,26 +336,29 @@ body.theme-light .pdf-page-sheet {
   pointer-events: auto;
 }
 
+/* Optimize scrolling: disable pointer hit-testing while actively scrolling */
+body.is-scrolling .pdf-overlay {
+  pointer-events: none !important;
+}
+
 /* Coordinate-Aligned Sentence Box */
 .pdf-sentence-box {
   position: absolute;
   border-radius: 2px;
   cursor: pointer;
-  transition: background-color 0.12s ease, box-shadow 0.12s ease;
   z-index: 10;
   scroll-margin-bottom: 220px;
   scroll-margin-top: 100px;
 }
 
 .pdf-sentence-box:hover {
-  background-color: rgba(59, 130, 246, 0.2);
-  outline: 1px dashed rgba(59, 130, 246, 0.6);
+  background-color: rgba(59, 130, 246, 0.16);
 }
 
 /* Active Highlight (Speechify Amber Karaoke Style) */
 .pdf-sentence-box.active-pdf-highlight {
   background-color: rgba(245, 158, 11, 0.38) !important;
-  box-shadow: 0 0 0 1.5px #f59e0b, 0 0 10px rgba(245, 158, 11, 0.5) !important;
+  box-shadow: 0 0 0 1.5px #f59e0b, 0 0 10px rgba(245, 158, 11, 0.4) !important;
   z-index: 20;
 }
 
