@@ -354,17 +354,17 @@ async def parse_file_endpoint(file: UploadFile = File(...), request: Request = N
         return parsed
 
 @app.get("/api/pdf-page/{doc_id}/{page_num}")
-def get_pdf_page(doc_id: str, page_num: int, dpi: int = 130):
+def get_pdf_page(doc_id: str, page_num: int, dpi: int = 112):
     """
     Renders a specific page of an uploaded PDF as a high-performance JPEG image.
-    Cached on disk, database, and browser for instant sub-millisecond retrieval.
+    Cached in RAM, disk, database, and browser for instant sub-millisecond retrieval.
     """
     try:
         jpg_bytes = render_pdf_page_image(doc_id, page_num, dpi=dpi)
         return Response(
             content=jpg_bytes,
             media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=604800, immutable"}
+            headers={"Cache-Control": "public, max-age=31536000, immutable"}
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

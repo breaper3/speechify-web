@@ -59,8 +59,19 @@ def init_db():
             FOREIGN KEY (doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS rendered_pages (
+            doc_id TEXT NOT NULL,
+            page_num INTEGER NOT NULL,
+            dpi INTEGER NOT NULL,
+            img_bytes BLOB NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (doc_id, page_num, dpi),
+            FOREIGN KEY (doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_docs_user ON documents(user_id, last_read_at DESC);
         CREATE INDEX IF NOT EXISTS idx_docs_share ON documents(share_id);
+        CREATE INDEX IF NOT EXISTS idx_rendered_pages ON rendered_pages(doc_id, page_num);
         """)
         conn.commit()
 
@@ -172,6 +183,34 @@ def get_pdf_bytes_from_db(doc_id: str) -> Optional[bytes]:
     with get_connection() as conn:
         row = conn.execute("SELECT pdf_bytes FROM pdf_blobs WHERE doc_id = ?", (doc_id,)).fetchone()
         return bytes(row["pdf_bytes"]) if row else None
+
+def save_rendered_page_to_db(doc_id: str, page_num: int, dpi: int, img_bytes: bytes) -> None:
+    """Persists rendered PDF page image directly into SQLite database."""
+    try:
+        with get_connection() as conn:
+            conn.execute("""
+                INSERT INTO rendered_pages (doc_id, page_num, dpi, img_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(doc_id, page_num, dpi) DO UPDATE SET
+                    img_bytes = excluded.img_bytes,
+                    created_at = excluded.created_at
+            """, (doc_id, page_num, dpi, img_bytes, int(time.time())))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB Page Cache Error] {e}")
+
+def get_rendered_page_from_db(doc_id: str, page_num: int, dpi: int) -> Optional[bytes]:
+    """Retrieves cached page image bytes from the persistent database."""
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT img_bytes FROM rendered_pages WHERE doc_id = ? AND page_num = ? AND dpi = ?",
+                (doc_id, page_num, dpi)
+            ).fetchone()
+            return bytes(row["img_bytes"]) if row else None
+    except Exception as e:
+        print(f"[DB Page Cache Read Warning] {e}")
+        return None
 
 def list_user_documents(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Returns library listing with reading progress and stats without heavy body text."""

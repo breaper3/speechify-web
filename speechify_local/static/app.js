@@ -1421,23 +1421,130 @@ function renderDocument(docData) {
   }
 }
 
+// ==========================================================================
+// Smart Prioritized PDF Page Loading Pipeline
+// ==========================================================================
+const pdfPageLoader = {
+  activeRequests: 0,
+  maxConcurrent: 2,
+  queue: [],
+  pageSheets: new Map(),
+  loadedPages: new Set(),
+  docId: null,
+
+  init(docId) {
+    this.activeRequests = 0;
+    this.queue = [];
+    this.pageSheets.clear();
+    this.loadedPages.clear();
+    this.docId = docId;
+  },
+
+  register(pageNum, sheet, img, url) {
+    this.pageSheets.set(pageNum, { sheet, img, url });
+  },
+
+  requestPage(pageNum, isPriority = false) {
+    if (this.loadedPages.has(pageNum)) return;
+    const item = this.pageSheets.get(pageNum);
+    if (!item) return;
+    if (item.img.src && item.img.complete && item.img.naturalWidth > 0) {
+      this.loadedPages.add(pageNum);
+      item.sheet.classList.remove('is-loading');
+      return;
+    }
+
+    const existingIdx = this.queue.indexOf(pageNum);
+    if (existingIdx !== -1) {
+      if (isPriority) {
+        this.queue.splice(existingIdx, 1);
+        this.queue.unshift(pageNum);
+      }
+    } else {
+      if (isPriority) {
+        this.queue.unshift(pageNum);
+      } else {
+        this.queue.push(pageNum);
+      }
+    }
+    this.processQueue();
+  },
+
+  prioritizeNear(pageNum) {
+    this.pruneDistantQueue(pageNum);
+    // 1. Current visible page with top priority
+    this.requestPage(pageNum, true);
+    // 2. Next page ahead
+    if (this.pageSheets.has(pageNum + 1)) {
+      this.requestPage(pageNum + 1, false);
+    }
+    // 3. Previous page behind
+    if (pageNum > 0 && this.pageSheets.has(pageNum - 1)) {
+      this.requestPage(pageNum - 1, false);
+    }
+  },
+
+  pruneDistantQueue(centerPageNum) {
+    // Drop queued background requests for pages more than 5 pages away from viewport
+    this.queue = this.queue.filter(p => Math.abs(p - centerPageNum) <= 5);
+  },
+
+  processQueue() {
+    while (this.activeRequests < this.maxConcurrent && this.queue.length > 0) {
+      const pageNum = this.queue.shift();
+      const item = this.pageSheets.get(pageNum);
+      if (!item || this.loadedPages.has(pageNum)) continue;
+
+      if (!item.img.src) {
+        this.activeRequests++;
+        item.img.decoding = 'async';
+        item.img.onload = () => {
+          this.activeRequests = Math.max(0, this.activeRequests - 1);
+          this.loadedPages.add(pageNum);
+          item.sheet.classList.remove('is-loading');
+          this.processQueue();
+        };
+        item.img.onerror = () => {
+          this.activeRequests = Math.max(0, this.activeRequests - 1);
+          setTimeout(() => {
+            if (!this.loadedPages.has(pageNum)) {
+              this.requestPage(pageNum, false);
+            }
+          }, 1200);
+          this.processQueue();
+        };
+        item.img.src = item.url;
+      }
+    }
+  }
+};
+
 function renderPdfView(docData) {
   pdfViewer.innerHTML = '';
+  pdfPageLoader.init(docData.doc_id);
   
-  // Set up an IntersectionObserver for reliable, smooth page rendering
+  // IntersectionObserver for preloading pages within buffer
   const pageObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
-        const sheet = entry.target;
-        const img = sheet.querySelector('.pdf-page-img');
-        if (img && !img.src) {
-          img.src = img.dataset.src;
-        }
-        pageObserver.unobserve(sheet);
+        const pageNum = parseInt(entry.target.dataset.page, 10);
+        pdfPageLoader.requestPage(pageNum, false);
       }
     });
   }, {
-    rootMargin: '1200px 0px 1200px 0px' // Preload 1200px above and below viewport
+    rootMargin: '800px 0px 800px 0px'
+  });
+
+  // VisibleObserver for actively visible page priority
+  const visibleObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const pageNum = parseInt(entry.target.dataset.page, 10);
+        pdfPageLoader.prioritizeNear(pageNum);
+      }
+    });
+  }, {
+    threshold: 0.1
   });
 
   docData.pages.forEach(p => {
@@ -1451,28 +1558,11 @@ function renderPdfView(docData) {
     img.className = 'pdf-page-img';
     img.alt = `Page ${p.page_num + 1}`;
     img.decoding = 'async';
-    img.loading = 'lazy';
-    img.dataset.src = `/api/pdf-page/${docData.doc_id}/${p.page_num}`;
+    const pageUrl = `/api/pdf-page/${docData.doc_id}/${p.page_num}`;
 
-    // Remove loading placeholder once image renders
-    img.onload = () => {
-      sheet.classList.remove('is-loading');
-    };
-
-    // Auto-retry with backoff if image fails
-    img.onerror = () => {
-      console.warn(`[PDF Page] Page ${p.page_num + 1} render retry...`);
-      setTimeout(() => {
-        img.src = `/api/pdf-page/${docData.doc_id}/${p.page_num}?retry=${Date.now()}`;
-      }, 1500);
-    };
-
-    // First 4 pages load immediately; subsequent pages load via IntersectionObserver
-    if (p.page_num < 4) {
-      img.src = img.dataset.src;
-    } else {
-      pageObserver.observe(sheet);
-    }
+    pdfPageLoader.register(p.page_num, sheet, img, pageUrl);
+    pageObserver.observe(sheet);
+    visibleObserver.observe(sheet);
 
     sheet.appendChild(img);
 
@@ -1516,6 +1606,11 @@ function renderPdfView(docData) {
 
     pdfViewer.appendChild(sheet);
   });
+
+  // Immediately prioritize the resume page
+  const initialSentence = docData.sentences[state.currentIndex || 0];
+  const initialPage = initialSentence ? (initialSentence.page_num || 0) : (docData.current_page || 0);
+  pdfPageLoader.prioritizeNear(initialPage);
 }
 
 function renderTextView(docData) {
@@ -1664,6 +1759,10 @@ function jumpToSentence(index, autoPlay = true) {
   const sObj = state.document.sentences[target];
   const curPage = sObj ? (sObj.page_num || 0) : 0;
   persistReadingProgress(target, curPage);
+
+  if (state.viewMode === 'pdf' && typeof pdfPageLoader !== 'undefined') {
+    pdfPageLoader.prioritizeNear(curPage);
+  }
 
   if (autoPlay) {
     playSentence(target);
