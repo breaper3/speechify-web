@@ -1199,18 +1199,28 @@ body.theme-light .app-notification-toast {
 }
 
 .dock-meta {
-  min-width: 130px;
+  min-width: 110px;
+  max-width: 240px;
+  overflow: hidden;
+  flex-shrink: 1;
 }
 
 .dock-counter {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 
 .dock-time {
   font-size: 0.72rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dock-controls {
@@ -1808,6 +1818,9 @@ body.theme-light .app-notification-toast {
   flex: 1;
   text-align: center;
   padding: 0 4px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dock-mini-expand {

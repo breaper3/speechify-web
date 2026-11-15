@@ -1939,13 +1939,60 @@ function updateActiveSentenceHighlight(index) {
   highlightActiveTocItem(index);
 }
 
+function getActiveSectionOrPage() {
+  if (!state.document) {
+    return { primaryLabel: 'Ready', pageInfo: '', displayPage: 1, totalPages: 1, hasTocTitle: false };
+  }
+
+  const sObj = state.document.sentences[state.currentIndex];
+  const curPageNum = sObj ? (sObj.page_num || 0) : 0;
+  const displayPage = curPageNum + 1;
+  const totalPages = state.document.total_pages || 1;
+
+  let activeTitle = null;
+  if (Array.isArray(state.document.toc) && state.document.toc.length > 0) {
+    for (let i = 0; i < state.document.toc.length; i++) {
+      const it = state.document.toc[i];
+      if (typeof it.sentence_id === 'number' && state.currentIndex >= it.sentence_id) {
+        activeTitle = it.title;
+      } else if (typeof it.page_num === 'number' && curPageNum >= it.page_num) {
+        activeTitle = it.title;
+      } else {
+        break;
+      }
+    }
+  }
+
+  const hasTocTitle = !!(activeTitle && activeTitle.trim());
+  let primaryLabel = '';
+  let pageInfo = state.document.is_pdf ? `Page ${displayPage} of ${totalPages}` : '';
+
+  if (hasTocTitle) {
+    primaryLabel = activeTitle.trim();
+  } else if (state.document.is_pdf) {
+    primaryLabel = `Page ${displayPage} of ${totalPages}`;
+  } else {
+    const cur = state.currentIndex + 1;
+    const tot = state.document.total_sentences;
+    primaryLabel = `Part ${cur} of ${tot}`;
+  }
+
+  return {
+    primaryLabel,
+    pageInfo,
+    displayPage,
+    totalPages,
+    hasTocTitle
+  };
+}
+
 function updateProgressUI() {
   if (!state.document || state.document.total_sentences === 0) {
-    sentenceCounter.textContent = 'Sentence 0 / 0';
-    if (miniSentenceCounter) miniSentenceCounter.textContent = 'Sentence 0 / 0';
-    if (mobileMiniSnippet) mobileMiniSnippet.textContent = 'Sentence 0 / 0 · 0m left';
-    if (mobileSheetDocStats) mobileSheetDocStats.textContent = 'Sentence 0 / 0 · 0m left';
-    if (mobileScrubberSentence) mobileScrubberSentence.textContent = 'Sentence 0 / 0';
+    sentenceCounter.textContent = 'Ready';
+    if (miniSentenceCounter) miniSentenceCounter.textContent = 'Ready';
+    if (mobileMiniSnippet) mobileMiniSnippet.textContent = 'Ready · 0m left';
+    if (mobileSheetDocStats) mobileSheetDocStats.textContent = 'Ready · 0m left';
+    if (mobileScrubberSentence) mobileScrubberSentence.textContent = 'Ready';
     if (mobileScrubberTime) mobileScrubberTime.textContent = '0m left';
     if (mobileScrubberFill) mobileScrubberFill.style.width = '0%';
     remainingTime.textContent = '0m left';
@@ -1953,31 +2000,50 @@ function updateProgressUI() {
     return;
   }
 
-  const current = state.currentIndex + 1;
   const total = state.document.total_sentences;
-  sentenceCounter.textContent = `Sentence ${current} / ${total}`;
-  if (miniSentenceCounter) miniSentenceCounter.textContent = `Sentence ${current} / ${total}`;
-
   let remainingWords = 0;
   for (let i = state.currentIndex; i < total; i++) {
     remainingWords += state.document.sentences[i].word_count || 10;
   }
   const adjustedWpm = 150 * state.speed;
   const minsLeft = Math.max(0.1, Math.round((remainingWords / adjustedWpm) * 10) / 10);
-  remainingTime.textContent = `${minsLeft}m left`;
+
+  const sectionInfo = getActiveSectionOrPage();
+
+  // Desktop Dock Labels: Show Table of Contents section name, or Page X of Y
+  sentenceCounter.textContent = sectionInfo.primaryLabel;
+  sentenceCounter.title = sectionInfo.hasTocTitle 
+    ? `${sectionInfo.primaryLabel} (${sectionInfo.pageInfo})` 
+    : sectionInfo.primaryLabel;
+
+  if (sectionInfo.hasTocTitle && sectionInfo.pageInfo) {
+    remainingTime.textContent = `P. ${sectionInfo.displayPage} · ${minsLeft}m left`;
+    remainingTime.title = `${sectionInfo.pageInfo} · ~${minsLeft} minutes remaining`;
+  } else {
+    remainingTime.textContent = `${minsLeft}m left`;
+    remainingTime.title = `~${minsLeft} minutes remaining in document`;
+  }
+
+  // Minimized Capsule Pill
+  if (miniSentenceCounter) {
+    miniSentenceCounter.textContent = sectionInfo.primaryLabel;
+    miniSentenceCounter.title = sectionInfo.primaryLabel;
+  }
 
   const pct = (state.currentIndex / total) * 100;
   dockProgressBar.style.width = `${pct}%`;
 
   // Mobile Sync Updates
   if (mobileMiniSnippet) {
-    mobileMiniSnippet.textContent = `Sentence ${current} / ${total} · ${minsLeft}m left`;
+    mobileMiniSnippet.textContent = `${sectionInfo.primaryLabel} · ${minsLeft}m left`;
   }
   if (mobileSheetDocStats) {
-    mobileSheetDocStats.textContent = `Sentence ${current} / ${total} · ${minsLeft}m left`;
+    mobileSheetDocStats.textContent = sectionInfo.hasTocTitle
+      ? `${sectionInfo.primaryLabel} (${sectionInfo.pageInfo}) · ${minsLeft}m left`
+      : `${sectionInfo.primaryLabel} · ${minsLeft}m left`;
   }
   if (mobileScrubberSentence) {
-    mobileScrubberSentence.textContent = `Sentence ${current} of ${total}`;
+    mobileScrubberSentence.textContent = sectionInfo.primaryLabel;
   }
   if (mobileScrubberTime) {
     mobileScrubberTime.textContent = `${minsLeft}m left`;
