@@ -32,7 +32,7 @@ from .auth import (
 app = FastAPI(title="Speechify Cloud API", version="2.0.0")
 
 # Hybrid cloud / local worker environment configuration
-DEFAULT_TUNNEL_URL = "https://hist-recorder-rebecca-titten.trycloudflare.com"
+DEFAULT_TUNNEL_URL = "https://down-folks-hundreds-residential.trycloudflare.com"
 LOCAL_WORKER_URL = os.environ.get("LOCAL_WORKER_URL", DEFAULT_TUNNEL_URL if os.environ.get("RENDER") else "").rstrip("/")
 WORKER_SECRET_KEY = os.environ.get("WORKER_SECRET_KEY", "")
 
@@ -69,6 +69,10 @@ class PrewarmRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     credential: str
 
+class NodeRegisterRequest(BaseModel):
+    url: str
+    secret: Optional[str] = None
+
 class ProgressUpdateRequest(BaseModel):
     sentence_index: int
     page_num: int = 0
@@ -102,6 +106,18 @@ async def node_status():
     except Exception as ex:
         return {"configured": True, "online": False, "error": str(ex)}
     return {"configured": True, "online": False}
+
+@app.post("/api/register-node")
+async def register_node(payload: NodeRegisterRequest):
+    global LOCAL_WORKER_URL
+    if WORKER_SECRET_KEY and payload.secret != WORKER_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized worker access.")
+    new_url = payload.url.strip().rstrip("/")
+    if not new_url:
+        raise HTTPException(status_code=400, detail="Missing tunnel URL.")
+    LOCAL_WORKER_URL = new_url
+    print(f"[NodeRegistry] Successfully registered active GPU worker URL: {LOCAL_WORKER_URL}")
+    return {"status": "ok", "node_url": LOCAL_WORKER_URL}
 
 @app.get("/api/voices")
 def get_voices():

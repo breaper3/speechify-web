@@ -131,8 +131,60 @@
   </div>
 
   <!-- Main Canvas Container -->
-  <main class="reader-container">
+  <main class="reader-container" id="readerContainer">
     
+    <!-- Floating Adobe / Edge Style PDF Document Zoom & Action Toolbar -->
+    <aside class="doc-zoom-toolbar hidden" id="docZoomToolbar" aria-label="Document Zoom Controls">
+      <div class="doc-zoom-group">
+        <button class="doc-zoom-btn" id="btnDocZoomOut" title="Zoom Out (Ctrl -)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+
+        <div class="doc-zoom-dropdown-wrapper">
+          <button class="doc-zoom-btn doc-zoom-level-btn" id="btnDocZoomLevel" title="Select Zoom Level">
+            <span id="docZoomText">100%</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="doc-zoom-dropdown hidden" id="docZoomDropdown">
+            <button class="doc-zoom-item" data-zoom="fit-width">Fit to Width</button>
+            <button class="doc-zoom-item" data-zoom="fit-page">Fit to Page</button>
+            <div class="doc-zoom-divider"></div>
+            <button class="doc-zoom-item" data-zoom="0.5">50%</button>
+            <button class="doc-zoom-item" data-zoom="0.75">75%</button>
+            <button class="doc-zoom-item active" data-zoom="1.0">100%</button>
+            <button class="doc-zoom-item" data-zoom="1.25">125%</button>
+            <button class="doc-zoom-item" data-zoom="1.5">150%</button>
+            <button class="doc-zoom-item" data-zoom="2.0">200%</button>
+            <button class="doc-zoom-item" data-zoom="3.0">300%</button>
+          </div>
+        </div>
+
+        <button class="doc-zoom-btn" id="btnDocZoomIn" title="Zoom In (Ctrl +)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+      </div>
+
+      <div class="doc-zoom-sep"></div>
+
+      <div class="doc-zoom-group">
+        <button class="doc-zoom-btn" id="btnFitWidth" title="Fit to Width (Shift+W)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 9 1 12 4 15"></polyline>
+            <polyline points="20 9 23 12 20 15"></polyline>
+            <line x1="1" y1="12" x2="23" y2="12"></line>
+            <rect x="7" y="5" width="10" height="14" rx="1.5"></rect>
+          </svg>
+        </button>
+        <button class="doc-zoom-btn" id="btnFitPage" title="Fit to Page (Shift+P)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="2" width="16" height="20" rx="2"></rect>
+            <line x1="8" y1="7" x2="16" y2="7"></line>
+            <line x1="8" y1="12" x2="16" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+    </aside>
+
     <!-- 1. Visual PDF Mode (Displays actual PDF pages with overlays) -->
     <div class="pdf-viewer" id="pdfViewer">
       <!-- Injected PDF page sheets will render here -->
@@ -272,6 +324,7 @@
           <!-- Page Zoom / Font Controls -->
           <div class="font-controls" id="readerFontControls">
             <button class="font-btn" id="btnZoomOut" title="Zoom Out / Smaller Font">-</button>
+            <span class="dock-zoom-val" id="dockZoomValue" title="Current Document Zoom">100%</span>
             <button class="font-btn" id="btnZoomIn" title="Zoom In / Larger Font">+</button>
           </div>
 
@@ -368,6 +421,7 @@
         <span>Display Scale / Font Size:</span>
         <div class="drawer-zoom-btns">
           <button class="drawer-zoom-btn" id="btnDrawerZoomOut">A−</button>
+          <span class="drawer-zoom-val" id="drawerZoomValue">100%</span>
           <button class="drawer-zoom-btn" id="btnDrawerZoomIn">A+</button>
         </div>
       </div>

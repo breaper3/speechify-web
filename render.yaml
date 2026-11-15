@@ -10,7 +10,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.8
       - key: LOCAL_WORKER_URL
-        value: https://hist-recorder-rebecca-titten.trycloudflare.com
+        value: https://down-folks-hundreds-residential.trycloudflare.com
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: SESSION_SECRET

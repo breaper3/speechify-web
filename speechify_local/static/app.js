@@ -90,6 +90,18 @@ const btnThemeToggle = document.getElementById('btnThemeToggle');
 const themeIcon = document.getElementById('themeIcon');
 const btnZoomIn = document.getElementById('btnZoomIn');
 const btnZoomOut = document.getElementById('btnZoomOut');
+const dockZoomValue = document.getElementById('dockZoomValue');
+const drawerZoomValue = document.getElementById('drawerZoomValue');
+
+// Floating Adobe / Edge Document Zoom Toolbar Elements
+const docZoomToolbar = document.getElementById('docZoomToolbar');
+const btnDocZoomOut = document.getElementById('btnDocZoomOut');
+const btnDocZoomIn = document.getElementById('btnDocZoomIn');
+const btnDocZoomLevel = document.getElementById('btnDocZoomLevel');
+const docZoomText = document.getElementById('docZoomText');
+const docZoomDropdown = document.getElementById('docZoomDropdown');
+const btnFitWidth = document.getElementById('btnFitWidth');
+const btnFitPage = document.getElementById('btnFitPage');
 
 // Mobile Mini-Player Bar Elements
 const dockMobileBar = document.getElementById('dockMobileBar');
@@ -778,6 +790,14 @@ async function initApp() {
   setupMobileGestures();
   setPlaybackSpeed(1.0, true);
 
+  // Restore document zoom preference
+  const savedDocZoom = parseFloat(localStorage.getItem('speechify_doc_zoom'));
+  if (!isNaN(savedDocZoom) && savedDocZoom >= 0.3 && savedDocZoom <= 3.0) {
+    setDocZoom(savedDocZoom);
+  } else {
+    setDocZoom(1.0);
+  }
+
   // Initialize Local Persistence & Google OAuth
   await initIndexedDB();
   await checkAuthSession();
@@ -950,11 +970,16 @@ function renderDocument(docData) {
   if (docData.is_pdf) {
     viewModeToggle.classList.remove('hidden');
     if (btnMobileViewToggle) btnMobileViewToggle.classList.remove('hidden');
+    if (docZoomToolbar) docZoomToolbar.classList.remove('hidden');
     setViewMode('pdf');
     renderPdfView(docData);
+    if (window.innerWidth <= 840) {
+      setTimeout(fitToWidth, 60);
+    }
   } else {
     viewModeToggle.classList.add('hidden');
     if (btnMobileViewToggle) btnMobileViewToggle.classList.add('hidden');
+    if (docZoomToolbar) docZoomToolbar.classList.remove('hidden');
     setViewMode('text');
   }
 
@@ -1616,6 +1641,39 @@ function setupKeyboardShortcuts() {
       return;
     }
 
+    // Document Zoom Shortcuts (Adobe / Edge style)
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        setDocZoom(state.pdfZoom + 0.1);
+        return;
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setDocZoom(state.pdfZoom - 0.1);
+        return;
+      }
+      if (e.key === '0') {
+        e.preventDefault();
+        setDocZoom(1.0);
+        return;
+      }
+    }
+
+    // Shift+W for Fit to Width, Shift+P for Fit to Page
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.code === 'KeyW' || e.key === 'W') {
+        e.preventDefault();
+        fitToWidth();
+        return;
+      }
+      if (e.code === 'KeyP' || e.key === 'P') {
+        e.preventDefault();
+        fitToPage();
+        return;
+      }
+    }
+
     if (e.code === 'Space') {
       e.preventDefault();
       togglePlayPause();
@@ -1745,6 +1803,70 @@ function setPlaybackSpeed(targetSpeed, applySnap = true) {
 }
 
 // ==========================================================================
+// Document Zoom Engine (Adobe / Edge PDF Viewer Style)
+// ==========================================================================
+function setDocZoom(newZoom, updatePresets = true) {
+  // Clamp zoom between 30% and 300%
+  const clamped = Math.max(0.3, Math.min(3.0, newZoom));
+  state.pdfZoom = Math.round(clamped * 100) / 100;
+
+  // Apply to document root CSS variable
+  document.documentElement.style.setProperty('--pdf-zoom', state.pdfZoom);
+
+  // Synchronize Text View font size if in text mode
+  state.fontSize = Math.max(14, Math.min(36, Math.round(20 * state.pdfZoom)));
+  document.documentElement.style.setProperty('--reader-font-size', `${state.fontSize}px`);
+
+  // Update UI indicators
+  const pctStr = `${Math.round(state.pdfZoom * 100)}%`;
+  if (docZoomText) docZoomText.textContent = pctStr;
+  if (dockZoomValue) dockZoomValue.textContent = pctStr;
+  if (drawerZoomValue) drawerZoomValue.textContent = pctStr;
+
+  // Update active item in preset dropdown
+  if (updatePresets && docZoomDropdown) {
+    const items = docZoomDropdown.querySelectorAll('.doc-zoom-item');
+    items.forEach(it => {
+      const zVal = parseFloat(it.dataset.zoom);
+      if (!isNaN(zVal) && Math.abs(zVal - state.pdfZoom) < 0.03) {
+        it.classList.add('active');
+      } else {
+        it.classList.remove('active');
+      }
+    });
+  }
+
+  // Persist preference in localStorage
+  try {
+    localStorage.setItem('speechify_doc_zoom', state.pdfZoom.toString());
+  } catch (err) {
+    // Ignore storage quota or privacy mode errors
+  }
+}
+
+function fitToWidth() {
+  const container = document.getElementById('readerContainer') || document.body;
+  const availWidth = Math.max(280, (container.clientWidth || window.innerWidth) - 48);
+  const baseWidth = 820;
+  const target = availWidth / baseWidth;
+  setDocZoom(target, false);
+}
+
+function fitToPage() {
+  const headerHeight = 65;
+  const dockHeight = window.innerWidth <= 1024 ? 90 : 110;
+  const availHeight = Math.max(280, window.innerHeight - headerHeight - dockHeight - 48);
+  let aspect = 1.33;
+  if (state.document && state.document.pages && state.document.pages[0]) {
+    const p0 = state.document.pages[0];
+    if (p0.width && p0.height) aspect = p0.height / p0.width;
+  }
+  const baseHeight = 820 * aspect;
+  const target = availHeight / baseHeight;
+  setDocZoom(target, false);
+}
+
+// ==========================================================================
 // Event Listeners & Wire-up
 // ==========================================================================
 function setupEventListeners() {
@@ -1817,26 +1939,90 @@ function setupEventListeners() {
     themeIcon.textContent = isLight ? '☀️' : '🌙';
   });
 
-  // Zoom / Font Controls
-  btnZoomOut.addEventListener('click', () => {
-    if (state.viewMode === 'pdf') {
-      state.pdfZoom = Math.max(0.65, state.pdfZoom - 0.1);
-      document.documentElement.style.setProperty('--pdf-zoom', state.pdfZoom);
-    } else {
-      state.fontSize = Math.max(15, state.fontSize - 2);
-      document.documentElement.style.setProperty('--reader-font-size', `${state.fontSize}px`);
+  // Dedicated Document Zoom Controls (Adobe / Edge style)
+  if (btnZoomOut) btnZoomOut.addEventListener('click', () => setDocZoom(state.pdfZoom - 0.1));
+  if (btnZoomIn) btnZoomIn.addEventListener('click', () => setDocZoom(state.pdfZoom + 0.1));
+
+  if (btnDocZoomOut) btnDocZoomOut.addEventListener('click', () => setDocZoom(state.pdfZoom - 0.1));
+  if (btnDocZoomIn) btnDocZoomIn.addEventListener('click', () => setDocZoom(state.pdfZoom + 0.1));
+
+  if (btnDocZoomLevel && docZoomDropdown) {
+    btnDocZoomLevel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      docZoomDropdown.classList.toggle('hidden');
+    });
+  }
+
+  if (docZoomDropdown) {
+    docZoomDropdown.querySelectorAll('.doc-zoom-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const zTarget = item.dataset.zoom;
+        if (zTarget === 'fit-width') {
+          fitToWidth();
+        } else if (zTarget === 'fit-page') {
+          fitToPage();
+        } else {
+          const parsed = parseFloat(zTarget);
+          if (!isNaN(parsed)) setDocZoom(parsed);
+        }
+        docZoomDropdown.classList.add('hidden');
+      });
+    });
+  }
+
+  if (btnFitWidth) btnFitWidth.addEventListener('click', fitToWidth);
+  if (btnFitPage) btnFitPage.addEventListener('click', fitToPage);
+
+  // Close zoom dropdown on outside click
+  document.addEventListener('click', (e) => {
+    if (docZoomDropdown && !docZoomDropdown.classList.contains('hidden')) {
+      if (!docZoomDropdown.contains(e.target) && (!btnDocZoomLevel || !btnDocZoomLevel.contains(e.target))) {
+        docZoomDropdown.classList.add('hidden');
+      }
     }
   });
 
-  btnZoomIn.addEventListener('click', () => {
-    if (state.viewMode === 'pdf') {
-      state.pdfZoom = Math.min(1.5, state.pdfZoom + 0.1);
-      document.documentElement.style.setProperty('--pdf-zoom', state.pdfZoom);
-    } else {
-      state.fontSize = Math.min(32, state.fontSize + 2);
-      document.documentElement.style.setProperty('--reader-font-size', `${state.fontSize}px`);
-    }
-  });
+  // Ctrl + Mouse Wheel for Document Zoom alone without browser zoom
+  const readerContainerEl = document.getElementById('readerContainer') || document.querySelector('.reader-container');
+  if (readerContainerEl) {
+    readerContainerEl.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.08 : -0.08;
+        setDocZoom(state.pdfZoom + delta);
+      }
+    }, { passive: false });
+
+    // Touch pinch to zoom for mobile devices
+    let initialPinchDist = null;
+    let initialPinchZoom = 1.0;
+
+    readerContainerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        initialPinchDist = Math.hypot(dx, dy);
+        initialPinchZoom = state.pdfZoom;
+      }
+    }, { passive: true });
+
+    readerContainerEl.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && initialPinchDist) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const curDist = Math.hypot(dx, dy);
+        const scale = curDist / initialPinchDist;
+        setDocZoom(initialPinchZoom * scale);
+      }
+    }, { passive: true });
+
+    readerContainerEl.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        initialPinchDist = null;
+      }
+    }, { passive: true });
+  }
 
   // Modal Open/Close
   btnOpenImport.addEventListener('click', openModal);
@@ -2021,10 +2207,10 @@ function setupEventListeners() {
     });
   }
   if (btnDrawerZoomOut) {
-    btnDrawerZoomOut.addEventListener('click', () => btnZoomOut.click());
+    btnDrawerZoomOut.addEventListener('click', () => setDocZoom(state.pdfZoom - 0.1));
   }
   if (btnDrawerZoomIn) {
-    btnDrawerZoomIn.addEventListener('click', () => btnZoomIn.click());
+    btnDrawerZoomIn.addEventListener('click', () => setDocZoom(state.pdfZoom + 0.1));
   }
 
   // Mobile Mini-Player Bar
