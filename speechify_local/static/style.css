@@ -1291,7 +1291,7 @@ body.theme-light .app-notification-toast {
   font-weight: 600;
   cursor: pointer;
   outline: none;
-  max-width: 170px;
+  max-width: 130px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1340,7 +1340,7 @@ body.theme-light .app-notification-toast {
 
 .speed-track-container {
   position: relative;
-  width: 140px;
+  width: 100px;
   height: 8px;
   background-color: rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-full);
@@ -1698,19 +1698,18 @@ body.theme-light .app-notification-toast {
 }
 
 .dock-minimize-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  width: auto;
-  height: 32px;
-  border-radius: var(--radius-md);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
+  justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 8px;
   transition: all 0.15s ease;
 }
 
@@ -1718,11 +1717,7 @@ body.theme-light .app-notification-toast {
   background-color: var(--bg-surface-hover);
   color: var(--text-primary);
   border-color: var(--accent-primary);
-}
-
-.dock-btn-label {
-  font-size: 0.75rem;
-  font-weight: 600;
+  transform: translateY(1px);
 }
 
 .mobile-mini-minimize-btn {

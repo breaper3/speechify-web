@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#0f172a">
-  <link rel="stylesheet" href="/static/style.css?v=20261115_perf5">
+  <link rel="stylesheet" href="/static/style.css?v=20261115_perf6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -399,13 +399,12 @@
             <span class="dock-zoom-val" id="dockZoomValue" title="Current Document Zoom">100%</span>
             <button class="font-btn" id="btnZoomIn" title="Zoom In / Larger Font">+</button>
           </div>
-
-          <!-- Minimize Player Bar Button -->
-          <button class="dock-btn-icon dock-minimize-btn" id="btnMinimizeDock" title="Minimize player bar (M)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            <span class="dock-btn-label">Minimize</span>
-          </button>
         </div>
+
+        <!-- Dedicated Minimize Button at Far Right (Never Clipped) -->
+        <button class="dock-minimize-btn" id="btnMinimizeDock" title="Minimize player bar (M)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
       </div>
 
       <!-- Mobile Mini-Player Bar (Speechify / Apple Books Mobile Style) -->
@@ -679,6 +678,6 @@
   <!-- Audio Element -->
   <audio id="audioPlayer" preload="auto"></audio>
 
-  <script src="/static/app.js?v=20261115_perf5"></script>
+  <script src="/static/app.js?v=20261115_perf6"></script>
 </body>
 </html>
